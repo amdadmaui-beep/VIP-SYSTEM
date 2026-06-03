@@ -1,0 +1,7 @@
+# Deny all access to reports directory
+<IfModule mod_rewrite.c>
+    RewriteRule ^ - [F,L]
+</IfModule>
+<IfModule !mod_rewrite.c>
+    Deny from all
+</IfModule>

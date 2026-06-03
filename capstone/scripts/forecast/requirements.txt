@@ -1,0 +1,4 @@
+# Prophet (Facebook) for bag-demand forecasting. Python 3.9+ recommended.
+pandas>=2.0.0,<3
+numpy>=1.24.0,<3
+prophet>=1.1.5

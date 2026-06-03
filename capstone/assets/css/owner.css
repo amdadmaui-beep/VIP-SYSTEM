@@ -1,0 +1,220 @@
+/* Modern overrides & fixes */
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .dashboard-wrapper { display: flex; width: 100%; min-height: 100vh; }
+        .modal-active { overflow: hidden; }
+
+        /* Index.php specific - reduced margins */
+        .main-content.index-dashboard {
+            margin-left: 250px;
+            padding: 1.5rem 0.75rem 2rem 1.5rem;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Antigravity Glass Panel */
+        .glass-panel {
+            background: rgba(255,255,255,0.72) !important;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.82) !important;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.03), 0 5px 15px rgba(0,0,0,0.02) !important;
+        }
+
+        /* ── Tilt cards ── */
+        .tilt-card {
+            transform-style: preserve-3d;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+            will-change: transform;
+        }
+        .tilt-card .tilt-shine {
+            position: absolute; inset: 0; border-radius: inherit;
+            background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.18) 0%, transparent 70%);
+            pointer-events: none; opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        .tilt-card:hover .tilt-shine { opacity: 1; }
+
+        /* ── Animated number counter ── */
+        .stat-counter { display: inline-block; transition: transform 0.3s; }
+
+        /* ── Mini progress bar under stat value ── */
+        .stat-bar-track {
+            height: 4px; border-radius: 999px;
+            background: rgba(0,0,0,0.06);
+            margin-top: 0.75rem; overflow: hidden;
+        }
+        .stat-bar-fill {
+            height: 100%; border-radius: 999px;
+            width: 0; transition: width 1.4s cubic-bezier(0.16,1,0.3,1);
+        }
+
+        /* ── Ripple on table rows ── */
+        .ripple-row { position: relative; overflow: hidden; }
+        .ripple-wave {
+            position: absolute; border-radius: 50%;
+            background: rgba(113,50,245,0.12);
+            transform: scale(0); animation: rippleAnim 0.55s linear;
+            pointer-events: none;
+        }
+        @keyframes rippleAnim {
+            to { transform: scale(4); opacity: 0; }
+        }
+
+        /* ── Chart card action buttons ── */
+        .chart-actions { display: flex; gap: 0.5rem; }
+        .chart-action-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 34px; height: 34px; border-radius: 10px;
+            background: #f1f5f9; border: 1.5px solid #e2e8f0;
+            color: #64748b; cursor: pointer; transition: all 0.2s;
+        }
+        .chart-action-btn:hover {
+            background: #7132f5; border-color: #7132f5; color: #fff;
+            transform: scale(1.08);
+        }
+
+        /* ── Chart expand modal ── */
+        #chartModal {
+            display: none; position: fixed; inset: 0; z-index: 99999;
+            background: rgba(15,23,42,0.65); backdrop-filter: blur(8px);
+            align-items: center; justify-content: center; padding: 1.5rem;
+        }
+        #chartModal.open { display: flex; }
+        #chartModalInner {
+            background: #fff; border-radius: 1.75rem;
+            width: 100%; max-width: 960px; max-height: 90vh;
+            display: flex; flex-direction: column; overflow: hidden;
+            box-shadow: 0 40px 80px rgba(0,0,0,0.2);
+            animation: modalPop 0.35s cubic-bezier(0.16,1,0.3,1) forwards;
+        }
+        @keyframes modalPop {
+            from { opacity:0; transform: scale(0.92) translateY(30px); }
+            to   { opacity:1; transform: scale(1) translateY(0); }
+        }
+        #chartModalHeader {
+            padding: 1.25rem 1.75rem; border-bottom: 1px solid #f1f5f9;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        #chartModalTitle { font-size: 1.1rem; font-weight: 800; color: #0f172a; }
+        #chartModalBody { flex: 1; padding: 1.5rem; min-height: 420px; }
+        #chartModalClose {
+            width: 36px; height: 36px; border-radius: 10px;
+            background: #f1f5f9; border: none; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            color: #64748b; transition: all 0.2s;
+        }
+        #chartModalClose:hover { background: #ef4444; color: #fff; }
+
+        /* ── Calendar day tooltip ── */
+        .cal-day-tooltip {
+            position: absolute; bottom: calc(100% + 8px); left: 50%;
+            transform: translateX(-50%) scale(0.9);
+            background: #1e293b; color: #fff; font-size: 11px; font-weight: 700;
+            padding: 5px 10px; border-radius: 8px; white-space: nowrap;
+            pointer-events: none; opacity: 0;
+            transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+            z-index: 20;
+        }
+        .cal-day-tooltip::after {
+            content: ''; position: absolute; top: 100%; left: 50%;
+            transform: translateX(-50%);
+            border: 5px solid transparent;
+            border-top-color: #1e293b;
+        }
+        .cal-day-wrap:hover .cal-day-tooltip {
+            opacity: 1; transform: translateX(-50%) scale(1);
+        }
+        .cal-day-wrap { position: relative; }
+
+        /* ── Cursor aura ── */
+        #cursorAura {
+            position: fixed; width: 480px; height: 480px;
+            border-radius: 50%; pointer-events: none; z-index: 1;
+            background: radial-gradient(circle, rgba(113,50,245,0.055) 0%, transparent 68%);
+            transform: translate(-50%,-50%);
+            mix-blend-mode: multiply;
+            will-change: left, top;
+        }
+
+        /* ── Stat card click pulse ── */
+        @keyframes cardPulse {
+            0%   { box-shadow: 0 0 0 0 rgba(113,50,245,0.3); }
+            70%  { box-shadow: 0 0 0 12px rgba(113,50,245,0); }
+            100% { box-shadow: 0 0 0 0  rgba(113,50,245,0); }
+        }
+        .tilt-card:active { animation: cardPulse 0.4s ease; }
+
+        /* ── Slide-up animation ── */
+        .animate-slide-up-3d {
+            opacity: 0; will-change: transform, opacity;
+            transform-style: preserve-3d;
+        }
+        .delay-100 { animation-delay: 100ms; }
+        .delay-200 { animation-delay: 200ms; }
+        .delay-300 { animation-delay: 300ms; }
+        .delay-400 { animation-delay: 400ms; }
+        .delay-500 { animation-delay: 500ms; }
+        .delay-600 { animation-delay: 600ms; }
+        .delay-700 { animation-delay: 700ms; }
+
+        @keyframes slideUp {
+            from { transform: translateY(10px); opacity: 0; }
+            to   { transform: translateY(0);    opacity: 1; }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards;
+        }
+
+        /* ── 3D Slide-up (CSS keyframe for JS observer) ── */
+        @keyframes slide-up-3d {
+            0%   { opacity: 0; transform: perspective(1000px) translateY(50px) rotateX(-12deg) scale(0.96); }
+            100% { opacity: 1; transform: perspective(1000px) translateY(0)    rotateX(0deg)   scale(1); }
+        }
+
+        /* ── Shimmer on card hover (only plays on hover) ── */
+        @keyframes shimmer {
+            from { background-position: -200% center; }
+            to   { background-position:  200% center; }
+        }
+        .stat-shimmer {
+            position: absolute; inset: 0; border-radius: inherit;
+            background: linear-gradient(105deg,
+                transparent 38%, rgba(255,255,255,0.6) 50%, transparent 62%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s ease infinite;
+            animation-play-state: paused;
+            pointer-events: none; opacity: 0;
+            transition: opacity 0.25s;
+        }
+        .tilt-card:hover .stat-shimmer { opacity: 1; animation-play-state: running; }
+
+        /* Notification stacking */
+        #notificationDropdown:not(.hidden) #notificationList > * {
+            opacity: 0; transform-origin: top center;
+            animation: slideUp 0.4s cubic-bezier(0.16,1,0.3,1) forwards;
+            transition: all 0.3s cubic-bezier(0.16,1,0.3,1); position: relative;
+        }
+        #notificationDropdown:not(.hidden) #notificationList > *:hover {
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 10px 20px rgba(139,92,246,0.1);
+            background: rgba(245,243,255,0.8) !important; z-index: 10;
+        }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(1) { animation-delay:  50ms; }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(2) { animation-delay: 100ms; }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(3) { animation-delay: 150ms; }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(4) { animation-delay: 200ms; }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(5) { animation-delay: 250ms; }
+        #notificationDropdown:not(.hidden) #notificationList > *:nth-child(n+6) { animation-delay: 300ms; }
+
+        @media print {
+            .sidebar, .mobile-sidebar-toggle, .no-print, .welcome-banner { display: none !important; }
+            .main-content { margin-left: 0 !important; width: 100% !important; padding: 0 !important; }
+        }
+        .ai-msg { animation: slideUp 0.35s cubic-bezier(0.16,1,0.3,1) forwards; }
+        @keyframes aiTyping { 0%,80%,100%{transform:scale(0)} 40%{transform:scale(1)} }
+        .ai-dot { display:inline-block; width:6px; height:6px; background:#94a3b8; border-radius:50%; animation: aiTyping 1.2s infinite; }
+        .ai-dot:nth-child(2){animation-delay:0.2s}
+        .ai-dot:nth-child(3){animation-delay:0.4s}

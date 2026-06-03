@@ -1,0 +1,18 @@
+Options -Indexes
+
+<Files ".env">
+    Require all denied
+</Files>
+
+<FilesMatch "^(.*\.sql|.*\.log|.*\.bak|.*\.old|composer\.(json|lock)|package(-lock)?\.json)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(bypass.*|check_.*|list_.*|run_query|schema_dump.*|test[0-9]*|migrate_.*)\.php$">
+    Require all denied
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^capstone/(scratch|database|tests|scripts|cursor-skill|objectives|SKILLS|docs|vendor)(/|$) - [F,L]
+</IfModule>

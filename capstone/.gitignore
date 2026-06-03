@@ -1,0 +1,47 @@
+# VIP System - Git Ignore File
+# Security: Ensure sensitive files are not committed
+
+# Environment configuration (contains sensitive data)
+.env
+
+# IDE and editor files
+.cursor/
+.cursorrules
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+error_log
+
+# Uploads and temporary files
+uploads/temp/
+uploads/*.tmp
+cache/
+temp/
+
+# Dependencies (if using Composer)
+vendor/
+composer.lock
+
+# Database backups
+*.sql
+*.sql.gz
+backups/
+
+# PHPUnit cache
+.phpunit.result.cache
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Security files
+*.pem
+*.key
+.htpasswd

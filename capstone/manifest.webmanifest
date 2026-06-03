@@ -1,0 +1,31 @@
+{
+  "name": "VIP Rider Dashboard",
+  "short_name": "VIP Rider",
+  "description": "Rider delivery management dashboard for Villanueva Ice Plant",
+  "start_url": "/VIP-system/capstone/pages/rider_view.php",
+  "scope": "/VIP-system/capstone/",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#7c3aed",
+  "categories": ["business", "productivity"],
+  "screenshots": [
+    {
+      "src": "/VIP-system/capstone/assets/images/screenshot-1280x720.png",
+      "sizes": "1280x720",
+      "type": "image/png",
+      "form_factor": "wide"
+    }
+  ],
+  "icons": [
+    {
+      "src": "/VIP-system/capstone/assets/images/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/VIP-system/capstone/assets/images/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

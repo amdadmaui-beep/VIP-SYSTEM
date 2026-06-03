@@ -1,0 +1,8 @@
+# Deny PHP execution in uploads directory
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule \.(php|phtml|phar|php\d*)$ - [F,L]
+</IfModule>
+<IfModule !mod_rewrite.c>
+    Deny from all
+</IfModule>

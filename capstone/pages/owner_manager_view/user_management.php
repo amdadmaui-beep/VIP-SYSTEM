@@ -103,9 +103,9 @@ foreach ($user_module_rows as $row) {
         .um-table tr:hover td { background: #fafbff; }
 
         .role-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.78rem; font-weight: 600; }
-        .role-owner { background: #ede9fe; color: #5b21b6; }
-        .role-cashier { background: #dcfce7; color: #166534; }
-        .role-delivery_rider { background: #dbeafe; color: #1e40af; }
+        .role-badge-owner { background: #ede9fe; color: #5b21b6; }
+        .role-badge-cashier { background: #dcfce7; color: #166534; }
+        .role-badge-delivery_rider { background: #dbeafe; color: #1e40af; }
         .role-manager { background: #fef3c7; color: #92400e; }
         .role-default { background: #f1f5f9; color: #475569; }
 
@@ -173,7 +173,24 @@ foreach ($user_module_rows as $row) {
         .user-row-inactive .user-username { color: #94a3b8; }
 
         /* Role Info Cards */
-        .role-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .role-info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        /* New heading/subtitle styling */
+        .page-title { font-size: 2rem; font-weight: 700; color: #0f172a; margin: 0 0 0.25rem 0; }
+        .page-subtitle { font-size: 1rem; color: #64748b; margin: 0 0 1.5rem 0; }
+        .um-page-banner { position: relative; overflow: hidden; border-radius: 24px; padding: 2rem; margin-bottom: 2rem; color: #fff; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); box-shadow: 0 20px 40px rgba(99,102,241,0.24); }
+        .um-page-banner::before { content: ''; position: absolute; top: -80px; right: -70px; width: 260px; height: 260px; border-radius: 999px; background: rgba(255,255,255,0.1); pointer-events: none; }
+        .um-page-banner .page-title { position: relative; z-index: 1; display: flex; align-items: center; gap: 0.75rem; color: #fff; margin: 0; font-size: 1.85rem; }
+        .um-page-banner .page-subtitle { position: relative; z-index: 1; color: rgba(255,255,255,0.9); margin: 0.5rem 0 0; }
+        /* Redesigned role info cards */
+        .role-info-card { background: #ffffff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 8px 16px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; transition: transform 0.3s, box-shadow 0.3s; }
+        .role-info-card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.12); }
+        .role-info-card.owner { background: linear-gradient(135deg, #e0e7ff, #f0f5ff); }
+        .role-info-card.manager { background: linear-gradient(135deg, #fff7e6, #ffedd5); }
+        .role-info-card.cashier { background: linear-gradient(135deg, #ecfdf5, #d1fae5); }
+        .role-info-card.rider { background: linear-gradient(135deg, #eff6ff, #dbeafe); }
+        .role-info-card.inventory { background: linear-gradient(135deg, #f5f3ff, #e0e7ff); }
+        .role-info-card h4 { margin: 0 0 0.5rem 0; font-size: 1rem; font-weight: 700; color: #1e293b; }
+        .role-info-card p { margin: 0; font-size: 0.85rem; color: #64748b; line-height: 1.4; }
         .role-info-card { background: white; border-radius: 16px; padding: 1.25rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); border: 1px solid #f1f5f9; transition: transform 0.2s; }
         .role-info-card:hover { transform: translateY(-3px); }
         .role-info-card i { font-size: 1.5rem; margin-bottom: 0.75rem; display: block; }
@@ -296,10 +313,12 @@ foreach ($user_module_rows as $row) {
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
-            <div class="um-header">
-                <h1><i class="fas fa-user-shield"></i> User Management</h1>
-                <p>Manage system users and their access roles.</p>
-            </div>
+            <section class="um-page-banner">
+                <div class="header-content">
+                    <h1 class="page-title"><i class="fas fa-users-cog header-icon"></i> User Management</h1>
+                    <p class="page-subtitle">Manage system users and their access roles.</p>
+                </div>
+            </section>
 
             <div class="role-info-grid">
                 <div class="role-info-card owner">
@@ -382,7 +401,7 @@ foreach ($user_module_rows as $row) {
                                 }
                                 $roleKey = strtolower(str_replace(' ', '_', $roleName));
                                 
-                                $roleClass = 'role-' . $roleKey;
+                                $roleClass = 'role-badge-' . $roleKey;
                                 $avatarClass = 'avatar-' . ($roleKey === 'delivery_rider' ? 'rider' : $roleKey);
                                 $fullName = trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? ''));
                                 $displayName = $fullName ?: ($user['full_name'] ?? $user['user_name']);

@@ -137,6 +137,7 @@ $query = "SELECT
     p.wholesale_price,
     p.retail_price,
     p.description,
+    p.product_image,
     p.created_date,
     p.is_discontinued,
     (SELECT quantity FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY updated_at DESC LIMIT 1) as current_quantity,
@@ -749,6 +750,9 @@ $history_result = $conn->query($history_query)->fetchAll();
                                     <td>
                                         <div class="product-name">
                                             <i class="fas fa-box"></i>
+                                            <?php if (!empty($row['product_image'])): ?>
+                                                <img src="../uploads/products/<?php echo htmlspecialchars($row['product_image']); ?>" alt="" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover; border: 1px solid #e2e8f0;">
+                                            <?php endif; ?>
                                             <?php echo htmlspecialchars($row['product_name']); ?>
                                         </div>
                                     </td>

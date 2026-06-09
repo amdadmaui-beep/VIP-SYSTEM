@@ -39,10 +39,6 @@ if (!function_exists('isApiRequest')) {
 }
 
 function initApiErrorHandling(): void {
-    if (!isApiRequest()) {
-        return;
-    }
-
     ini_set('display_errors', '0');
     error_reporting(E_ALL);
 
@@ -51,13 +47,20 @@ function initApiErrorHandling(): void {
     });
 
     set_exception_handler(function ($e) {
-        error_log('API exception: ' . $e->getMessage());
-        http_response_code(500);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => false,
-            'error' => 'Server error',
-        ]);
+        error_log('Uncaught exception: ' . $e->getMessage());
+        if (isApiRequest()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'error' => 'Server error']);
+        } else {
+            http_response_code(500);
+            $errorFile = __DIR__ . '/../500.html';
+            if (file_exists($errorFile)) {
+                readfile($errorFile);
+            } else {
+                echo '<h1>500 — Server Error</h1><p>Something went wrong. Please contact the administrator.</p>';
+            }
+        }
         exit;
     });
 }

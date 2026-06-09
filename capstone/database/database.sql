@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS products (
     retail_price DECIMAL(10, 2) NOT NULL,
     is_discontinued TINYINT(1) DEFAULT 0,
     description TEXT,
+    product_image VARCHAR(255) DEFAULT NULL,
     last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     created_date DATE DEFAULT (CURRENT_DATE),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

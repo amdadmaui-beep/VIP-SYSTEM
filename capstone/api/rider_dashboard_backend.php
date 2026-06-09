@@ -417,10 +417,11 @@ function cancelDelivery($conn, $user_id, $order_status_col) {
         // ── Vehicle issue special handling ──
         if ($reason === 'Vehicle issue') {
             // Set rider to Off Duty — they're stuck waiting for truck repair
-            if (riderWorkflowHasColumn($conn, 'user', 'rider_availability_status')) {
-                $offStmt = $conn->prepare("UPDATE user SET rider_availability_status = 'Off Duty' WHERE User_ID = ?");
-                $offStmt->execute([$user_id]);
-            }
+            ensureRiderWorkflowSchema($conn);
+            $availStmt = $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                                         VALUES (?, 'Off Duty', NOW())
+                                         ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()");
+            $availStmt->execute([$user_id]);
 
             // Notify all manager/owner users so they can reassign
             require_once __DIR__ . '/../includes/roles_helper.php';

@@ -100,3 +100,39 @@ if (!defined('ENCRYPTION_KEY')) {
 if (APP_ENV === 'production' && APP_DEBUG === true) {
     error_log("SECURITY WARNING: Debug mode enabled in production environment");
 }
+
+// Maintenance mode check
+$maintenanceFlag = __DIR__ . '/../maintenance.flag';
+if (file_exists($maintenanceFlag)) {
+    $isApi = (strpos(str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '')), '/api/') !== false);
+    if ($isApi) {
+        http_response_code(503);
+        header('Content-Type: application/json; charset=utf-8');
+        die(json_encode(['success' => false, 'error' => 'System is under maintenance. Please try again later.']));
+    }
+    http_response_code(503);
+    $maintenanceMsg = trim(file_get_contents($maintenanceFlag));
+    if (empty($maintenanceMsg)) {
+        $maintenanceMsg = 'The system is currently under maintenance. Please check back shortly.';
+    }
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Maintenance</title>
+    <style>body{font-family:Arial,sans-serif;background:#f1f5f9;color:#0f172a;margin:0;padding:24px;display:flex;min-height:100vh;align-items:center;justify-content:center}
+    .card{max-width:420px;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:18px;text-align:center;box-shadow:0 10px 30px rgba(15,23,42,0.08)}
+    .icon{width:72px;height:72px;margin:0 auto 12px;border-radius:20px;background:#fffbeb;display:flex;align-items:center;justify-content:center;font-size:2rem;color:#d97706}
+    .title{font-size:1.1rem;font-weight:800;margin-bottom:8px}
+    .text{color:#475569;font-size:.92rem;line-height:1.45}
+    </style></head>
+    <body>
+    <div class="card">
+        <div class="icon">&#9888;</div>
+        <div class="title">Under Maintenance</div>
+        <div class="text"><?php echo htmlspecialchars($maintenanceMsg); ?></div>
+    </div>
+    </body>
+    </html>
+    <?php
+    exit;
+}

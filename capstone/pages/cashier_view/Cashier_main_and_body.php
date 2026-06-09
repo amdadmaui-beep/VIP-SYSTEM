@@ -63,38 +63,42 @@
                     <?php foreach($products_res as $index => $p): ?>
                         <div class="catalog-card slide-in" onclick='addItemFromGrid(<?php echo json_encode($p); ?>)' style="position: relative; animation-delay: <?php echo $index * 0.05; ?>s" data-product-name="<?php echo strtolower(htmlspecialchars($p['product_name'])); ?>" data-product-id="<?php echo $p['Product_ID']; ?>" data-original-stock="<?php echo (float)$p['available_stock']; ?>">
                             <div class="product-image">
-                                <i class="fas fa-cube"></i>
+                                <!-- Badges overlapping image top-left -->
+                                <div class="card-badges">
+                                    <?php
+                                    $stock = (float)$p['available_stock'];
+                                    if ($stock <= 0) {
+                                        $badgeClass = 'badge-danger';
+                                        $badgeText = 'OUT';
+                                    } elseif ($stock <= 5) {
+                                        $badgeClass = 'badge-warning';
+                                        $badgeText = 'LOW: ' . rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.');
+                                    } else {
+                                        $badgeClass = 'badge-success';
+                                        $badgeText = 'QTY: ' . rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.');
+                                    }
+                                    ?>
+                                    <span class="card-badge <?php echo $badgeClass; ?>"><?php echo $badgeText; ?></span>
+                                    
+                                    <?php $reserved = (float)($p['reserved_stock'] ?? 0); if ($reserved > 0): ?>
+                                    <span class="card-badge badge-purple">RES: <?php echo rtrim(rtrim(number_format($reserved, 2, '.', ''), '0'), '.'); ?></span>
+                                    <?php endif; ?>
+                                </div>
+                                
+                                <?php if (!empty($p['product_image'])): ?>
+                                    <img src="../uploads/products/<?php echo htmlspecialchars($p['product_image']); ?>" alt="<?php echo htmlspecialchars($p['product_name']); ?>">
+                                <?php else: ?>
+                                    <i class="fas fa-cube"></i>
+                                <?php endif; ?>
                             </div>
                             <div class="product-info">
                                 <h5><?php echo htmlspecialchars($p['product_name']); ?></h5>
                                 <p class="unit"><?php echo htmlspecialchars($p['unit_name'] ?? 'Unit'); ?></p>
-                                <div style="display:flex; align-items:center; justify-content:space-between; gap: 0.5rem; margin-top: 0.75rem;">
-                                    <span class="price">₱<?php echo number_format($p['retail_price'], 2); ?></span>
-                                    <?php
-                                    $stock = (float)$p['available_stock'];
-                                    if ($stock <= 0) {
-                                        $badgeStyle = 'background:#dc2626; color:white;';
-                                        $badgeText = 'OUT';
-                                    } elseif ($stock <= 5) {
-                                        $badgeStyle = 'background:#f59e0b; color:white;';
-                                        $badgeText = 'LOW: ' . rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.');
-                                    } else {
-                                        $badgeStyle = 'background:#10b981; color:white;';
-                                        $badgeText = 'QTY: ' . rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.');
-                                    }
-                                    ?>
-                                    <span style="font-size: 0.9rem; padding: 6px 14px; border-radius: 999px; font-weight: 700; letter-spacing: 0.3px; <?php echo $badgeStyle; ?>">
-                                        <?php echo $badgeText; ?>
-                                    </span>
-                                    <?php $reserved = (float)($p['reserved_stock'] ?? 0); if ($reserved > 0): ?>
-                                    <span style="font-size: 0.85rem; padding: 5px 12px; border-radius: 999px; font-weight: 700; background: #8b5cf6; color: white;">
-                                        RES: <?php echo rtrim(rtrim(number_format($reserved, 2, '.', ''), '0'), '.'); ?>
-                                    </span>
-                                    <?php endif; ?>
+                                <span class="price">₱<?php echo number_format($p['retail_price'], 2); ?></span>
+                                
+                                <div class="add-icon">
+                                    <i class="fas fa-plus"></i>
                                 </div>
-                            </div>
-                            <div class="add-icon">
-                                <i class="fas fa-plus"></i>
                             </div>
                         </div>
                     <?php endforeach; ?>

@@ -1,8 +1,9 @@
     <?php
-    $activeTab = 'inventory';
+    $activeTab = 'dashboard';
     if (isset($_GET['tab'])) {
-        if ($_GET['tab'] === 'history') $activeTab = 'history';
+        if ($_GET['tab'] === 'inventory') $activeTab = 'inventory';
         if ($_GET['tab'] === 'dashboard') $activeTab = 'dashboard';
+        if ($_GET['tab'] === 'history') $activeTab = 'history';
     }
 
     $todayTotalProd = 0;
@@ -53,21 +54,21 @@
         <div id="pane-dashboard" class="tab-content <?php echo $activeTab === 'dashboard' ? 'active staggered-group' : 'hidden'; ?>">
             <!-- Stats Cards -->
             <div class="grid grid-cols-2 gap-3 mb-5">
-                <div class="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm text-center">
-                    <div class="text-2xl font-black text-indigo-600 mb-1"><?php echo $total_products; ?></div>
-                    <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Total Products</div>
+                <div class="bg-gradient-to-br from-indigo-500 to-indigo-600 p-5 rounded-2xl shadow-lg shadow-indigo-200 text-center">
+                    <div class="text-2xl font-black text-white mb-1"><?php echo $total_products; ?></div>
+                    <div class="text-[10px] font-bold text-indigo-100 tracking-wider uppercase">Total Products</div>
                 </div>
-                <div class="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm text-center">
-                    <div class="text-2xl font-black text-amber-500 mb-1"><?php echo $low_stock + $out_of_stock; ?></div>
-                    <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Low / Out of Stock</div>
+                <div class="bg-gradient-to-br from-amber-500 to-orange-600 p-5 rounded-2xl shadow-lg shadow-amber-200 text-center">
+                    <div class="text-2xl font-black text-white mb-1"><?php echo $low_stock + $out_of_stock; ?></div>
+                    <div class="text-[10px] font-bold text-amber-100 tracking-wider uppercase">Low / Out of Stock</div>
                 </div>
-                <div class="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm text-center">
-                    <div class="text-2xl font-black text-emerald-600 mb-1"><?php echo number_format($todayTotalProd); ?></div>
-                    <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Today's Stock In</div>
+                <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 p-5 rounded-2xl shadow-lg shadow-emerald-200 text-center">
+                    <div class="text-2xl font-black text-white mb-1"><?php echo number_format($todayTotalProd); ?></div>
+                    <div class="text-[10px] font-bold text-emerald-100 tracking-wider uppercase">Today's Stock In</div>
                 </div>
-                <div class="bg-white border border-slate-100 p-5 rounded-2xl shadow-sm text-center">
-                    <div class="text-2xl font-black text-rose-600 mb-1"><?php echo $pendingPrepCount; ?></div>
-                    <div class="text-[10px] font-bold text-slate-400 tracking-wider uppercase">Pending Prep</div>
+                <div class="bg-gradient-to-br from-rose-500 to-rose-600 p-5 rounded-2xl shadow-lg shadow-rose-200 text-center">
+                    <div class="text-2xl font-black text-white mb-1"><?php echo $pendingPrepCount; ?></div>
+                    <div class="text-[10px] font-bold text-rose-100 tracking-wider uppercase">Pending Prep</div>
                 </div>
             </div>
 
@@ -115,33 +116,36 @@
             <?php endif; ?>
 
             <?php if (!empty($needsAttentionOrders)): ?>
-            <div class="card" style="border:1px solid #fde68a; border-radius:16px; background:#fff; margin-bottom:1rem; overflow:hidden;">
-                <div class="card-header" style="background:#fffbeb; padding:0.85rem 1.25rem; border-bottom:1px solid #fde68a; display:flex; align-items:center; gap:0.6rem; font-weight:700; font-size:0.85rem; color:#92400e;">
-                    <i class="fas fa-exclamation-triangle" style="color:#d97706;"></i> Orders Needing Attention
-                    <span style="margin-left:auto; font-size:0.7rem; font-weight:600; color:#b45309;">Pack the shortage, then Record Stock In</span>
+            <div class="mb-5 rounded-2xl border border-amber-200 bg-white overflow-hidden shadow-sm">
+                <div class="flex items-center gap-3 bg-amber-50 px-5 py-4 border-b border-amber-100">
+                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                        <i class="fas fa-exclamation-triangle text-sm"></i>
+                    </div>
+                    <span class="text-sm font-bold text-amber-800">Orders Needing Attention</span>
+                    <span class="ml-auto text-[10px] font-bold text-amber-600 bg-amber-100 px-3 py-1.5 rounded-lg">Pack shortage, then Record Stock In</span>
                 </div>
-                <div style="overflow-x:auto;">
-                    <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
                         <thead>
-                            <tr style="background:#fefce8; border-bottom:1px solid #fde68a;">
-                                <th style="padding:0.6rem 0.75rem; text-align:left; color:#92400e;">Order</th>
-                                <th style="padding:0.6rem 0.75rem; text-align:left; color:#92400e;">Customer</th>
-                                <th style="padding:0.6rem 0.75rem; text-align:left; color:#92400e;">Product</th>
-                                <th style="padding:0.6rem 0.75rem; text-align:center; color:#92400e;">Ordered</th>
-                                <th style="padding:0.6rem 0.75rem; text-align:center; color:#92400e;">In Stock</th>
-                                <th style="padding:0.6rem 0.75rem; text-align:center; color:#92400e;">To Pack</th>
+                            <tr class="bg-amber-50/50 border-b border-amber-100">
+                                <th class="text-left px-4 py-3 font-bold text-amber-700">Order</th>
+                                <th class="text-left px-4 py-3 font-bold text-amber-700">Customer</th>
+                                <th class="text-left px-4 py-3 font-bold text-amber-700">Product</th>
+                                <th class="text-center px-4 py-3 font-bold text-amber-700">Ordered</th>
+                                <th class="text-center px-4 py-3 font-bold text-amber-700">In Stock</th>
+                                <th class="text-center px-4 py-3 font-bold text-amber-700">To Pack</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($needsAttentionOrders as $na): ?>
                             <?php $toPack = max(0, (int)$na['ordered_qty'] - (int)$na['available_stock']); ?>
-                            <tr style="border-bottom:1px solid #fef3c7;">
-                                <td style="padding:0.6rem 0.75rem; font-weight:600;">#<?php echo (int)$na['Order_ID']; ?></td>
-                                <td style="padding:0.6rem 0.75rem;"><?php echo htmlspecialchars($na['customer_name']); ?></td>
-                                <td style="padding:0.6rem 0.75rem;"><?php echo htmlspecialchars($na['product_name']); ?></td>
-                                <td style="padding:0.6rem 0.75rem; text-align:center;"><?php echo (int)$na['ordered_qty']; ?></td>
-                                <td style="padding:0.6rem 0.75rem; text-align:center;"><?php echo (int)$na['available_stock']; ?></td>
-                                <td style="padding:0.6rem 0.75rem; text-align:center; font-weight:700; color:#dc2626;"><?php echo $toPack; ?></td>
+                            <tr class="border-b border-amber-50 hover:bg-amber-50/30 transition-colors">
+                                <td class="px-4 py-3 font-bold text-slate-700">#<?php echo (int)$na['Order_ID']; ?></td>
+                                <td class="px-4 py-3 text-slate-600"><?php echo htmlspecialchars($na['customer_name']); ?></td>
+                                <td class="px-4 py-3 text-slate-600"><?php echo htmlspecialchars($na['product_name']); ?></td>
+                                <td class="px-4 py-3 text-center font-semibold text-slate-700"><?php echo (int)$na['ordered_qty']; ?></td>
+                                <td class="px-4 py-3 text-center font-semibold text-slate-700"><?php echo (int)$na['available_stock']; ?></td>
+                                <td class="px-4 py-3 text-center font-bold text-rose-600 bg-rose-50/50"><?php echo $toPack; ?></td>
                             </tr>
                             <?php endforeach; ?>
                         </tbody>

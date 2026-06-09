@@ -1,6 +1,21 @@
 <?php
 declare(strict_types=1);
 
+function riderSettingsTableExists(PDO $conn): bool
+{
+    static $exists = null;
+    if ($exists !== null) {
+        return $exists;
+    }
+    try {
+        $t = $conn->query("SHOW TABLES LIKE 'rider_settings'");
+        $exists = $t && $t->rowCount() > 0;
+    } catch (Throwable $e) {
+        $exists = false;
+    }
+    return $exists;
+}
+
 function riderWorkflowHasColumn(PDO $conn, string $table, string $column): bool
 {
     static $cache = [];
@@ -31,15 +46,32 @@ function ensureRiderWorkflowSchema(PDO $conn): void
         return;
     }
 
-    if (!riderWorkflowHasColumn($conn, 'user', 'rider_availability_status')) {
+    if (!riderSettingsTableExists($conn)) {
         try {
-            $conn->exec("ALTER TABLE user ADD COLUMN rider_availability_status ENUM('Available','On Delivery','Off Duty') NOT NULL DEFAULT 'Available'");
+            $conn->exec("CREATE TABLE IF NOT EXISTS rider_settings (
+                Setting_ID INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                User_ID INT UNSIGNED NOT NULL,
+                availability_status ENUM('Available', 'On Delivery', 'Off Duty') NOT NULL DEFAULT 'Available',
+                last_set_at DATETIME NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_user_id (User_ID),
+                FOREIGN KEY (User_ID) REFERENCES user(User_ID) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
         } catch (Throwable $e) {
             // Keep the page usable even if schema changes are blocked.
         }
     }
 
-    // returned_to_store_at and returned_to_store_by_user_id columns removed from schema
+    // Safety net: drop old column from user table if it still exists
+    try {
+        $checkCol = $conn->query("SHOW COLUMNS FROM user LIKE 'rider_availability_status'");
+        if ($checkCol && $checkCol->rowCount() > 0) {
+            $conn->exec("ALTER TABLE user DROP COLUMN rider_availability_status");
+        }
+    } catch (Throwable $e) {
+        // Best-effort; migration script handles this properly.
+    }
 
     $ensured = true;
 }
@@ -110,12 +142,12 @@ function riderBuildOwnershipCondition(PDO $conn, string $deliveryAlias, int $use
 function riderGetAvailabilityStatus(PDO $conn, int $userId): string
 {
     ensureRiderWorkflowSchema($conn);
-    if ($userId <= 0 || !riderWorkflowHasColumn($conn, 'user', 'rider_availability_status')) {
+    if ($userId <= 0 || !riderSettingsTableExists($conn)) {
         return 'Available';
     }
 
     try {
-        $stmt = $conn->prepare("SELECT rider_availability_status FROM user WHERE User_ID = ? LIMIT 1");
+        $stmt = $conn->prepare("SELECT availability_status FROM rider_settings WHERE User_ID = ? LIMIT 1");
         $stmt->execute([$userId]);
         $status = (string)($stmt->fetchColumn() ?: 'Available');
         return in_array($status, ['Available', 'On Delivery', 'Off Duty'], true) ? $status : 'Available';
@@ -126,7 +158,6 @@ function riderGetAvailabilityStatus(PDO $conn, int $userId): string
 
 function riderHasActiveDeliveries(PDO $conn, int $userId, ?int $excludeDeliveryId = null): bool
 {
-    ensureRiderWorkflowSchema($conn);
     if ($userId <= 0) {
         return false;
     }
@@ -147,7 +178,6 @@ function riderHasActiveDeliveries(PDO $conn, int $userId, ?int $excludeDeliveryI
 
 function riderGetAssignmentCounts(PDO $conn, int $userId): array
 {
-    ensureRiderWorkflowSchema($conn);
     if ($userId <= 0) {
         return [
             'active_delivery_count' => 0,
@@ -186,7 +216,7 @@ function riderGetAssignmentCounts(PDO $conn, int $userId): array
 function syncRiderAvailabilityForUser(PDO $conn, int $userId): string
 {
     ensureRiderWorkflowSchema($conn);
-    if ($userId <= 0 || !riderWorkflowHasColumn($conn, 'user', 'rider_availability_status')) {
+    if ($userId <= 0 || !riderSettingsTableExists($conn)) {
         return 'Available';
     }
 
@@ -195,8 +225,10 @@ function syncRiderAvailabilityForUser(PDO $conn, int $userId): string
     $nextStatus = $hasActiveDeliveries ? 'On Delivery' : ($currentStatus === 'Off Duty' ? 'Off Duty' : 'Available');
 
     if ($nextStatus !== $currentStatus) {
-        $stmt = $conn->prepare("UPDATE user SET rider_availability_status = ? WHERE User_ID = ?");
-        $stmt->execute([$nextStatus, $userId]);
+        $stmt = $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                                VALUES (?, ?, NOW())
+                                ON DUPLICATE KEY UPDATE availability_status = VALUES(availability_status), last_set_at = NOW()");
+        $stmt->execute([$userId, $nextStatus]);
     }
 
     return $nextStatus;
@@ -261,7 +293,6 @@ function riderGetUserIdByDeliveryId(PDO $conn, int $deliveryId): int
 
 function riderCanBeAssignedToTarget(PDO $conn, int $riderId, ?int $deliveryId = null, ?int $orderId = null): bool
 {
-    ensureRiderWorkflowSchema($conn);
     if ($riderId <= 0) {
         return false;
     }
@@ -325,8 +356,10 @@ function setManualRiderAvailability(PDO $conn, int $riderId, string $status): ar
         return ['success' => false, 'message' => "This rider is currently {$busyStatus} and cannot be changed manually."];
     }
 
-    $stmt = $conn->prepare("UPDATE user SET rider_availability_status = ? WHERE User_ID = ?");
-    $stmt->execute([$status, $riderId]);
+    $stmt = $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                            VALUES (?, ?, NOW())
+                            ON DUPLICATE KEY UPDATE availability_status = VALUES(availability_status), last_set_at = NOW()");
+    $stmt->execute([$riderId, $status]);
 
     return ['success' => true, 'message' => "Rider marked as {$status}.", 'status' => $status];
 }
@@ -343,11 +376,13 @@ function getRiderAvailabilityRows(PDO $conn, array $riderRoleIds): array
     $placeholders = implode(',', array_fill(0, count($riderRoleIds), '?'));
     try {
         $stmt = $conn->prepare(
-            "SELECT User_ID, COALESCE(full_name, user_name) AS name, COALESCE(user_name, '') AS user_name, rider_availability_status
-             FROM user
-             WHERE Role_ID IN ({$placeholders}) AND is_active = 1
-             ORDER BY FIELD(rider_availability_status, 'Available', 'On Delivery', 'Off Duty'),
-                      COALESCE(full_name, user_name), user_name"
+            "SELECT u.User_ID, COALESCE(u.full_name, u.user_name) AS name, COALESCE(u.user_name, '') AS user_name,
+                    COALESCE(rs.availability_status, 'Available') AS rider_availability_status
+             FROM user u
+             LEFT JOIN rider_settings rs ON rs.User_ID = u.User_ID
+             WHERE u.Role_ID IN ({$placeholders}) AND u.is_active = 1
+             ORDER BY FIELD(COALESCE(rs.availability_status, 'Available'), 'Available', 'On Delivery', 'Off Duty'),
+                      COALESCE(u.full_name, u.user_name), u.user_name"
         );
         $stmt->execute($riderRoleIds);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];

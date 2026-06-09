@@ -1,4 +1,5 @@
 <script>
+if (typeof CAN_CASHIER_ZREAD === 'undefined') window.CAN_CASHIER_ZREAD = window.CASHIER_VIEW_CONFIG?.canCashierZRead ?? true;
 let cart = [];
 
 function addItemFromGrid(product) {
@@ -11,7 +12,8 @@ function addItemFromGrid(product) {
             product_name: product.product_name,
             unit_price: parseFloat(product.retail_price) || 0,
             quantity: 1,
-            reserved_stock: parseFloat(product.reserved_stock) || 0
+            reserved_stock: parseFloat(product.reserved_stock) || 0,
+            product_image: product.product_image || null
         });
     }
     renderCart();
@@ -67,10 +69,11 @@ function renderCart() {
             const qty = parseFloat(item.quantity) || 0;
             const price = parseFloat(item.unit_price) || 0;
             const sub = qty * price;
+            const imgHtml = item.product_image && item.product_image.trim() !== ''
+                ? `<img src="../uploads/products/${item.product_image}" alt="${item.product_name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;" onerror="this.outerHTML='<i class=\'fas fa-cube\'></i>'">`
+                : `<i class="fas fa-cube"></i>`;
             return `<div class="order-item-card">
-                <div class="order-item-img">
-                    <i class="fas fa-cube"></i>
-                </div>
+                <div class="order-item-img">${imgHtml}</div>
                 <div class="order-item-info">
                     <h4>${item.product_name}</h4>
                     <div class="item-unit">₱${price.toFixed(2)} × ${qty}</div>
@@ -237,7 +240,6 @@ function toggleCatalog() {
 }
 
 function openShiftModal() {
-    if (typeof CAN_CASHIER_ZREAD === 'undefined') window.CAN_CASHIER_ZREAD = true;
     document.getElementById('shiftModal').style.display = 'block';
     const body = document.getElementById('shiftModalBody');
     if (!body) return;
@@ -570,15 +572,20 @@ function validateManagerPins(event) {
     .then(r => r.json())
     .then(result => {
         if (result.success) {
-            closeModal('managerPinModal');
+            const savedPin = document.getElementById('managerPin').value;
             document.getElementById('managerPin').value = '';
+            closeModal('managerPinModal');
+            if (result.csrf_token) {
+                const meta = document.querySelector('meta[name="csrf-token"]');
+                if (meta) meta.setAttribute('content', result.csrf_token);
+            }
             if (action === 'close_shift') {
                 const endingCash = parseFloat(data) || 0;
-                doCloseShift(endingCash);
+                doCloseShift(endingCash, savedPin);
                 return;
             }
             if (action === 'x_read') {
-                doXRead();
+                doXRead(savedPin);
                 return;
             }
             if (result.message) {
@@ -596,14 +603,14 @@ function validateManagerPins(event) {
     });
 }
 
-function doCloseShift(endingCash) {
+function doCloseShift(endingCash, managerPin) {
     const body = document.getElementById('shiftModalBody');
     if (!body) return;
     body.innerHTML = '<div style="text-align: center; padding: 3rem;"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Closing shift...</div>';
     const fd = new FormData();
     fd.append('action', 'close_shift');
     fd.append('ending_cash', endingCash.toString());
-    fd.append('manager_pins', document.getElementById('managerPin')?.value || '');
+    fd.append('manager_pins', managerPin || '');
     fd.append('denominations', '[]');
     fd.append('tolerance_amount', '50');
     const meta = document.querySelector('meta[name="csrf-token"]');
@@ -623,6 +630,7 @@ function doCloseShift(endingCash) {
                             <i class="fas fa-redo"></i> New Shift
                         </button>
                     </div>`;
+                Swal.fire({ icon: 'success', title: 'Shift Closed', text: result.message || 'Shift closed successfully.', confirmButtonText: 'OK' });
             } else {
                 Swal.fire({ icon: 'error', title: 'Close Failed', text: result.message || 'Could not close shift.', confirmButtonText: 'OK' });
                 openShiftModal();
@@ -634,14 +642,14 @@ function doCloseShift(endingCash) {
         });
 }
 
-function doXRead() {
+function doXRead(managerPin) {
     const body = document.getElementById('shiftModalBody');
     if (!body) return;
     document.getElementById('shiftModal').style.display = 'block';
     body.innerHTML = '<div style="text-align: center; padding: 3rem;"><i class="fas fa-spinner fa-spin fa-2x"></i><br>Generating X-Read...</div>';
     const fd = new FormData();
     fd.append('action', 'x_read');
-    fd.append('manager_pins', document.getElementById('managerPin')?.value || '');
+    fd.append('manager_pins', managerPin || '');
     fetch('../api/shift_management.php', { method: 'POST', body: fd, credentials: 'same-origin' })
         .then(r => r.json())
         .then(result => {
@@ -805,6 +813,9 @@ function togglePostToAR() {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+    // Check shift status
+    checkShiftOnLoad();
+
     const searchInput = document.getElementById('productSearch');
     if (searchInput) {
         searchInput.addEventListener('input', function() {
@@ -816,4 +827,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+function checkShiftOnLoad() {
+    const fd = new FormData();
+    fd.append('action', 'get_current_shift');
+    fetch('../api/shift_management.php', {
+        method: 'POST',
+        body: fd
+    })
+    .then(r => r.json())
+    .then(result => {
+        if (!result.success) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Active Shift',
+                text: 'You must open a shift before you can process transactions.',
+                confirmButtonText: 'Open Shift Now',
+                confirmButtonColor: '#0038A8',
+                allowOutsideClick: false,
+                allowEscapeKey: false
+            }).then((res) => {
+                if (res.isConfirmed) {
+                    openShiftModal();
+                }
+            });
+        }
+    })
+    .catch(console.error);
+}
 </script>

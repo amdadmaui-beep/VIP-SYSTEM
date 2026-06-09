@@ -20,9 +20,13 @@ try {
         $roleId = (int)($_SESSION['user_role'] ?? 0);
         if ($userId > 0 && $roleId > 0) {
             require_once __DIR__ . '/includes/roles_helper.php';
+            require_once __DIR__ . '/includes/rider_availability_helper.php';
             $riderIds = getRiderRoleIds($conn);
             if (in_array($roleId, $riderIds, true)) {
-                $conn->prepare("UPDATE user SET rider_availability_status = 'Off Duty' WHERE User_ID = ?")->execute([$userId]);
+                ensureRiderWorkflowSchema($conn);
+                $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                                VALUES (?, 'Off Duty', NOW())
+                                ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()")->execute([$userId]);
             }
         }
     }

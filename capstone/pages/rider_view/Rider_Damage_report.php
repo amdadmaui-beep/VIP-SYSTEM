@@ -92,10 +92,11 @@
                             </div>
                         <?php endif; ?>
                         
+                        <?php $photos = explode(',', (string)$ddr['photo_path']); $count = count($photos); ?>
                         <?php if (!empty($ddr['photo_path'])): ?>
                             <div class="mt-3">
-                                <button type="button" class="btn btn-sm btn-outline-primary rounded-xl px-4 py-2 w-100 text-[11px] fw-bold shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-2" onclick="viewDamagePhoto('<?= htmlspecialchars($ddr['photo_path'], ENT_QUOTES, 'UTF-8') ?>')">
-                                    <i class="fas fa-image"></i> VIEW DAMAGE EVIDENCE
+                                <button type="button" class="btn btn-sm btn-outline-primary rounded-xl px-4 py-2 w-100 text-[11px] fw-bold shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center justify-center gap-2" onclick="viewDamagePhoto('<?= htmlspecialchars(trim($photos[0]), ENT_QUOTES, 'UTF-8') ?>')">
+                                    <i class="fas fa-image"></i> VIEW DAMAGE EVIDENCE<?php if ($count > 1): ?> <span class="badge bg-primary ms-1">+<?php echo $count - 1; ?> more</span><?php endif; ?>
                                 </button>
                             </div>
                         <?php endif; ?>

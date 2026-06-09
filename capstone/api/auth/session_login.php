@@ -117,7 +117,10 @@ if (in_array($roleId, $riderIds, true)) {
     require_once __DIR__ . '/../../includes/rider_availability_helper.php';
     $hasActive = riderHasActiveDeliveries($conn, (int)$user['User_ID']);
     $newStatus = $hasActive ? 'On Delivery' : 'Available';
-    $conn->prepare("UPDATE user SET rider_availability_status = ? WHERE User_ID = ?")->execute([$newStatus, (int)$user['User_ID']]);
+    ensureRiderWorkflowSchema($conn);
+    $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                    VALUES (?, ?, NOW())
+                    ON DUPLICATE KEY UPDATE availability_status = VALUES(availability_status), last_set_at = NOW()")->execute([(int)$user['User_ID'], $newStatus]);
 }
 
 jsonResponse(true, [
@@ -199,7 +202,7 @@ function vip_post_login_redirect_relative(PDO $conn, int $roleId): string
         return 'pages/rider_view.php';
     }
     if ($invIds !== [] && in_array($roleId, $invIds, true)) {
-        return 'pages/manual_adjustment.php';
+        return 'pages/inventory_staff.php?tab=dashboard';
     }
     if ($cashierIds !== [] && in_array($roleId, $cashierIds, true)) {
         return 'pages/cashier_view.php';

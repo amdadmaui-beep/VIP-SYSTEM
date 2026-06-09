@@ -76,6 +76,7 @@ const viewOnlyModal = new bootstrap.Modal(document.getElementById('viewOnlyModal
 const fullMapModal = new bootstrap.Modal(document.getElementById('fullMapModal'));
 const damageReportModalEl = document.getElementById('damageReportModal');
 const damageReportModal = damageReportModalEl ? new bootstrap.Modal(damageReportModalEl) : null;
+const historyModal = new bootstrap.Modal(document.getElementById('collectionDetailModal'));
 
 let currentDeliveryId = 0;
 let currentOrderId = 0;
@@ -94,7 +95,7 @@ let mapStyleMode = '2d'; // '2d' | 'realistic'
 const fullMapRouteSourceId = 'delivery-route-src';
 const fullMapRouteLayerId = 'delivery-route-line';
 const routeCache = new Map();
-/** Only when Leaflet is loaded (maps enabled). Avoid `L.divIcon` at parse time — script would throw and break tabs/nav. */
+/** Only when Leaflet is loaded (maps enabled). Avoid `L.divIcon` at parse time � script would throw and break tabs/nav. */
 let riderIcon = null;
 let destinationIcon = null;
 if (RIDER_MAPS_ENABLED && typeof L !== 'undefined') {
@@ -216,31 +217,71 @@ document.getElementById('proofPhoto').addEventListener('change', function() {
 
 function viewDamagePhoto(path) {
     if (!path) return;
-    const fullPath = path.startsWith('http') ? path : '../' + path;
-    Swal.fire({
-        title: 'Damage Evidence',
-        imageUrl: fullPath,
-        imageAlt: 'Damage Photo',
-        confirmButtonText: 'Close',
-        confirmButtonColor: '#2563eb',
-        showCloseButton: true,
-        customClass: {
-            popup: 'rounded-[24px]',
-            confirmButton: 'rounded-pill px-4'
-        }
-    });
+    const paths = path.split(',').map(p => p.trim()).filter(Boolean);
+    const fullPaths = paths.map(p => p.startsWith('http') ? p : '../' + p);
+    if (fullPaths.length === 1) {
+        Swal.fire({
+            title: 'Damage Evidence',
+            imageUrl: fullPaths[0],
+            imageAlt: 'Damage Photo',
+            confirmButtonText: 'Close',
+            confirmButtonColor: '#2563eb',
+            showCloseButton: true,
+            customClass: { popup: 'rounded-[24px]', confirmButton: 'rounded-pill px-4' }
+        });
+    } else {
+        let current = 0;
+        const show = () => {
+            Swal.fire({
+                title: 'Damage Evidence (' + (current + 1) + '/' + fullPaths.length + ')',
+                imageUrl: fullPaths[current],
+                imageAlt: 'Damage Photo',
+                showConfirmButton: false,
+                showCloseButton: true,
+                customClass: { popup: 'rounded-[24px]' },
+                didOpen: () => {
+                    const popup = Swal.getPopup();
+                    if (current > 0) {
+                        const prev = document.createElement('button');
+                        prev.innerHTML = '�';
+                        prev.style.cssText = 'position:absolute;left:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.35);color:white;border:none;border-radius:50%;width:38px;height:38px;font-size:20px;cursor:pointer;z-index:20;display:flex;align-items:center;justify-content:center;';
+                        prev.onclick = () => { current--; Swal.close(); show(); };
+                        popup.appendChild(prev);
+                    }
+                    if (current < fullPaths.length - 1) {
+                        const next = document.createElement('button');
+                        next.innerHTML = '�';
+                        next.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.35);color:white;border:none;border-radius:50%;width:38px;height:38px;font-size:20px;cursor:pointer;z-index:20;display:flex;align-items:center;justify-content:center;';
+                        next.onclick = () => { current++; Swal.close(); show(); };
+                        popup.appendChild(next);
+                    }
+                }
+            });
+        };
+        show();
+    }
 }
 
 function previewDamagePhoto(input) {
     const wrap = document.getElementById('ddr_photo_preview_wrap');
-    const img = document.getElementById('ddr_photo_preview');
-    if (input.files && input.files[0]) {
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            img.src = e.target.result;
-            wrap.classList.remove('hidden');
+    if (input.files && input.files.length > 0) {
+        let html = '<div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));">';
+        for (let i = 0; i < input.files.length; i++) {
+            html += '<div class="relative"><img src="" alt="Photo ' + (i+1) + '" class="w-full h-20 object-cover rounded-[12px] border border-slate-200 shadow-sm"><div class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[10px] font-bold">' + (i+1) + '</div></div>';
         }
-        reader.readAsDataURL(input.files[0]);
+        html += '</div>';
+        wrap.innerHTML = html;
+        wrap.classList.remove('hidden');
+        for (let i = 0; i < input.files.length; i++) {
+            const reader = new FileReader();
+            reader.onload = (function(idx) {
+                return function(e) {
+                    const imgs = wrap.querySelectorAll('img');
+                    if (imgs[idx]) imgs[idx].src = e.target.result;
+                };
+            })(i);
+            reader.readAsDataURL(input.files[i]);
+        }
     } else {
         removeDamagePhoto();
     }
@@ -249,15 +290,16 @@ function previewDamagePhoto(input) {
 function removeDamagePhoto() {
     const input = document.getElementById('ddr_photo');
     const wrap = document.getElementById('ddr_photo_preview_wrap');
-    const img = document.getElementById('ddr_photo_preview');
     input.value = '';
-    img.src = '';
-    wrap.classList.add('hidden');
+    if (wrap) {
+        wrap.innerHTML = '<div class="relative inline-block w-full"><img id="ddr_photo_preview" src="" alt="Preview" class="w-full h-40 object-cover rounded-[16px] shadow-sm border border-slate-200"><button type="button" class="absolute -top-2 -right-2 w-8 h-8 rounded-full bg-rose-500 text-white shadow-lg flex items-center justify-center hover:bg-rose-600 transition-colors" onclick="removeDamagePhoto()"><i class="fas fa-times"></i></button></div>';
+        wrap.classList.add('hidden');
+    }
 }
 
 function switchToTab(id) {
     if ((id === 'dashboard' && !CAN_RIDER_DASHBOARD) || (id === 'queue' && !CAN_RIDER_QUEUE) || (id === 'history' && !CAN_RIDER_HISTORY) || (id === 'cancelled' && !CAN_RIDER_HISTORY) || (id === 'damage-reports' && !HAS_DELIVERY_DAMAGE_REPORTS)) {
-        Swal.fire('Access Restricted', 'You can’t access this module right now.', 'warning');
+        Swal.fire('Access Restricted', 'You can�t access this module right now.', 'warning');
         return;
     }
     document.querySelectorAll('.nav-tab-rider').forEach(t => t.classList.remove('active'));
@@ -287,7 +329,7 @@ function getInitialTab() {
 }
 
 function formatDistanceKm(km) {
-    if (!isFinite(km)) return '—';
+    if (!isFinite(km)) return '�';
     return `${km.toFixed(2)} km away`;
 }
 
@@ -636,7 +678,7 @@ async function renderInlineTracking(entry, riderLat, riderLng, speedMps = null) 
             : haversineKm(riderLat, riderLng, entry.destinationLatLng[0], entry.destinationLatLng[1]);
         const speedKph = isFinite(speedMps) && speedMps > 0 ? speedMps * 3.6 : null;
         const eta = estimateEtaMinutes(distKm, speedKph);
-        if (metaEl) metaEl.textContent = `Live rider: ${formatDistanceKm(distKm)} • ETA ${eta.min}-${eta.max} min • ${routeData?.alternatives || 1} route option(s)`;
+        if (metaEl) metaEl.textContent = `Live rider: ${formatDistanceKm(distKm)} � ETA ${eta.min}-${eta.max} min � ${routeData?.alternatives || 1} route option(s)`;
     } else if (metaEl) {
         metaEl.textContent = 'Live rider location active.';
     }
@@ -752,12 +794,12 @@ async function renderFullMapTracking(entry, riderLat, riderLng, speedMps = null)
             ? { min: Math.max(1, Math.round(routeData.durationMin)), max: Math.max(2, Math.round(routeData.durationMin * 1.35)) }
             : null;
         const eta = etaFromRoute || estimateEtaMinutes(distKm, speedKph);
-        if (metaEl) metaEl.textContent = `Tracking #${entry.deliveryId} • ${formatDistanceKm(distKm)} • ETA ${eta.min}-${eta.max} min (estimate only, traffic may cause delay)`;
-        if (chip) chip.textContent = `Rider en route • ${distKm.toFixed(2)} km • ETA ${eta.min}-${eta.max} min`;
+        if (metaEl) metaEl.textContent = `Tracking #${entry.deliveryId} � ${formatDistanceKm(distKm)} � ETA ${eta.min}-${eta.max} min (estimate only, traffic may cause delay)`;
+        if (chip) chip.textContent = `Rider en route � ${distKm.toFixed(2)} km � ETA ${eta.min}-${eta.max} min`;
         const routeSummary = document.getElementById('routeSummaryText');
         const stepsList = document.getElementById('routeStepsList');
         if (routeSummary) {
-            routeSummary.textContent = `Road route distance: ${distKm.toFixed(2)} km • Estimated travel: ${eta.min}-${eta.max} min • ${routeData?.alternatives || 1} route option(s)`;
+            routeSummary.textContent = `Road route distance: ${distKm.toFixed(2)} km � Estimated travel: ${eta.min}-${eta.max} min � ${routeData?.alternatives || 1} route option(s)`;
         }
         if (stepsList) {
             const steps = routeData?.steps || [];
@@ -766,7 +808,7 @@ async function renderFullMapTracking(entry, riderLat, riderLng, speedMps = null)
                 : '<li>Continue on current road toward destination.</li>';
         }
     } else if (metaEl) {
-        metaEl.textContent = `Tracking delivery #${entry.deliveryId} • rider location active`;
+        metaEl.textContent = `Tracking delivery #${entry.deliveryId} � rider location active`;
         if (chip) chip.textContent = 'Rider location active. Waiting for destination coordinates.';
         const routeSummary = document.getElementById('routeSummaryText');
         const stepsList = document.getElementById('routeStepsList');
@@ -836,13 +878,13 @@ function openFullMapTracking(deliveryId) {
                 fullMapDestinationMarker = L.marker(entry.destinationLatLng, { icon: destinationIcon }).addTo(fullMap).bindPopup(`Destination: ${entry.customerName || 'Customer'}`);
                 fullMap.setView(entry.destinationLatLng, 15);
             }
-            document.getElementById('fullMapMeta').textContent = `Tracking delivery #${entry.deliveryId} • waiting for rider position...`;
+            document.getElementById('fullMapMeta').textContent = `Tracking delivery #${entry.deliveryId} � waiting for rider position...`;
             const chip = document.getElementById('fullMapStatusChip');
             if (chip) chip.textContent = `Delivery #${entry.deliveryId}: destination locked, waiting for rider GPS...`;
         } else {
             if (usingMapLibre) fullMap.easeTo({ center: [120.9842, 14.5995], zoom: 12, duration: 250 });
             else fullMap.setView([14.5995, 120.9842], 12);
-            document.getElementById('fullMapMeta').textContent = `Tracking delivery #${entry.deliveryId} • destination not yet located`;
+            document.getElementById('fullMapMeta').textContent = `Tracking delivery #${entry.deliveryId} � destination not yet located`;
             const chip = document.getElementById('fullMapStatusChip');
             if (chip) chip.textContent = `Delivery #${entry.deliveryId}: destination not yet geocoded`;
         }
@@ -1015,7 +1057,7 @@ function openDetailModal(deliveryId, orderId) {
             document.getElementById('detailCustomerPhone').innerHTML = d.phone_number ? '<i class="fas fa-phone-alt me-1"></i>' + d.phone_number : '';
             document.getElementById('detailAddress').innerHTML = addr ? '<i class="fas fa-map-marker-alt"></i> <span>' + addr + '</span>' : '';
             const totalAmt = parseFloat(d.total_amount || 0);
-            document.getElementById('detailTotalDisplay').textContent = '₱' + totalAmt.toLocaleString('en-PH', {minimumFractionDigits: 0});
+            document.getElementById('detailTotalDisplay').textContent = '\u20B1' + totalAmt.toLocaleString('en-PH', {minimumFractionDigits: 0});
             document.getElementById('amountToCollect').value = totalAmt > 0 ? totalAmt : '';
             const isAr = d.is_ar == 1;
             const collectGroup = document.getElementById('collectInputGroup');
@@ -1165,9 +1207,11 @@ function submitDamageReport() {
         return;
     }
     const photoEl = document.getElementById('ddr_photo');
-    if (photoEl && photoEl.files && photoEl.files[0]) {
-        fd.append('photo', photoEl.files[0]);
-    }
+      if (photoEl && photoEl.files && photoEl.files.length > 0) {
+          for (let i = 0; i < photoEl.files.length; i++) {
+              fd.append('photo[]', photoEl.files[i]);
+          }
+      }
     const btn = document.getElementById('ddr_submit_btn');
     if (btn) { btn.disabled = true; }
     fetch('../api/delivery_damage_backend.php', { method: 'POST', body: fd })
@@ -1201,7 +1245,7 @@ function openReadOnlyModal(deliveryId, orderId) {
             document.getElementById('voCustomerName').textContent = custName;
             document.getElementById('voCustomerPhone').textContent = d.phone_number || '';
             document.getElementById('voAddress').textContent = addr || '';
-            document.getElementById('voTotalAmount').textContent = '₱' + parseFloat(d.total_amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 0});
+            document.getElementById('voTotalAmount').textContent = '\u20B1' + parseFloat(d.total_amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 0});
 
             const items = data.items || [];
 
@@ -1296,7 +1340,7 @@ document.getElementById('btnConfirmDelivery').addEventListener('click', () => {
         return;
     }
 
-    document.getElementById('codAmount').textContent = '₱' + amountToCollect.toLocaleString('en-PH', {minimumFractionDigits: 0});
+    document.getElementById('codAmount').textContent = '\u20B1' + amountToCollect.toLocaleString('en-PH', {minimumFractionDigits: 0});
 
     let payload;
     try {
@@ -1343,7 +1387,7 @@ function doConfirmDelivery(deliveredTo, amountToCollect) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                Swal.fire('Success', 'Delivery confirmed! Collected: ₱' + (data.total_amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 0}), 'success')
+                Swal.fire('Success', 'Delivery confirmed! Collected: \u20B1' + (data.total_amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 0}), 'success')
                     .then(() => location.reload());
             } else {
                 Swal.fire('Error', data.message || 'Failed to confirm', 'error');
@@ -1408,9 +1452,9 @@ function renderHistoryPage() {
     if (historyData.length) {
         list.innerHTML = pageData.map((d, i) => {
             const actualIndex = start + i;
-            const dateStr = d.actual_date ? new Date(d.actual_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+            const dateStr = d.actual_date ? new Date(d.actual_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : '�';
             const orderMeta = d.order_id ? `Order #${d.order_id}` : '';
-            const meta = [orderMeta, dateStr].filter(Boolean).join(' · ');
+            const meta = [orderMeta, dateStr].filter(Boolean).join(' � ');
             const status = (d.status || '').toString() || 'Delivered';
 
             return `
@@ -1419,12 +1463,12 @@ function renderHistoryPage() {
                     <div>
                         <h5 class="fw-bold mb-1 text-dark fs-6" style="font-family: 'Plus Jakarta Sans', sans-serif;">${(d.customer_name || 'Customer').replace(/</g, '&lt;')}</h5>
                         <p class="text-muted small mb-0" style="font-size: 0.8rem;">
-                            ${orderMeta} · ${dateStr} · To: ${(d.delivered_to || d.customer_name || '—').replace(/</g, '&lt;')}
+                            ${orderMeta} � ${dateStr} � To: ${(d.delivered_to || d.customer_name || '�').replace(/</g, '&lt;')}
                         </p>
                     </div>
                     <div class="text-end">
                         <span class="d-inline-block px-2 py-0.5 rounded text-xs fw-bold text-emerald-700 bg-emerald-50 mb-1" style="font-size: 0.65rem; letter-spacing: 0.02em;">COMPLETED</span>
-                        <div class="fw-black text-emerald-600 fs-5" style="font-family: 'Plus Jakarta Sans', sans-serif;">₱${parseFloat(d.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 })}</div>
+                        <div class="fw-black text-emerald-600 fs-5" style="font-family: 'Plus Jakarta Sans', sans-serif;">&#8369;${parseFloat(d.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 })}</div>
                     </div>
                 </div>
             </div>`;
@@ -1455,26 +1499,28 @@ function changeHistoryPage(delta) {
 }
 
 function showHistoryDetail(d) {
-    const customerName = d.customer_name || '—';
+    const customerName = d.customer_name || '�';
     const deliveredTo = d.delivered_to || '';
     
     document.getElementById('cdCustomer').textContent = customerName;
     
     // Only show "Received By" if it's different from customer name
     const deliveredToRow = document.getElementById('cdDeliveredToRow');
-    if (deliveredTo && deliveredTo !== customerName && deliveredTo !== '—') {
+    if (deliveredTo && deliveredTo !== customerName && deliveredTo !== '�') {
         document.getElementById('cdDeliveredTo').textContent = deliveredTo;
         deliveredToRow.style.display = 'block';
     } else {
         deliveredToRow.style.display = 'none';
     }
     
-    document.getElementById('cdAddress').textContent = d.delivery_address || '—';
-    document.getElementById('cdAmount').textContent = '₱' + parseFloat(d.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 });
-    document.getElementById('cdDeliveryId').textContent = '#' + (d.delivery_id || '—');
-    const dateStr = d.actual_date ? new Date(d.actual_date).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
+    document.getElementById('cdAddress').textContent = d.delivery_address || '�';
+    document.getElementById('cdAmount').textContent = '\u20B1' + parseFloat(d.total_amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 });
+    document.getElementById('cdDeliveryId').textContent = '#' + (d.delivery_id || '�');
+    const dateStr = d.actual_date ? new Date(d.actual_date).toLocaleString('en-PH', { dateStyle: 'medium', timeStyle: 'short' }) : '�';
     document.getElementById('cdDate').textContent = dateStr;
-    new bootstrap.Modal(document.getElementById('collectionDetailModal')).show();
+    viewOnlyModal.hide();
+    detailModal.hide();
+    historyModal.show();
 }
 
 function loadDeliveredHistory() {
@@ -1486,7 +1532,7 @@ function loadDeliveredHistory() {
                 historyCurrentPage = 1; // Reset to first page on load
                 const count = data.delivery_count || historyData.length || 0;
                 document.getElementById('historyTotalCount').textContent = count.toLocaleString('en-PH');
-                document.getElementById('historyCodTotal').textContent = '₱' + (data.total_cod || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 });
+                document.getElementById('historyCodTotal').textContent = '\u20B1' + (data.total_cod || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 });
                 renderHistoryPage();
             }
         })
@@ -1682,6 +1728,7 @@ let storedReadyIds = JSON.parse(localStorage.getItem('rider_known_ready_deliveri
 let phpReadyIds = Array.isArray(window.__riderReadyDeliveryIds) ? window.__riderReadyDeliveryIds.slice() : [];
 let knownReadyIds = new Set([...storedReadyIds, ...phpReadyIds]);
 localStorage.setItem('rider_known_ready_deliveries', JSON.stringify([...knownReadyIds]));
+let knownPrepStatuses = JSON.parse(localStorage.getItem('rider_known_prep_statuses') || '{}');
 
 let knownRemittanceUpdates = new Set(JSON.parse(localStorage.getItem('rider_known_remittance_updates') || '[]'));
 let knownDamageReviewUpdates = new Set(JSON.parse(localStorage.getItem('rider_known_damage_reviews') || '[]'));
@@ -1775,7 +1822,7 @@ function handleRiderRemittanceUpdate(data, shouldNotify = true) {
     const deliveryId = parseInt(data.delivery_id || '0', 10) || 0;
     const status = String(data.status || 'Completed').toLowerCase();
 
-    // Rider marked as Remitted — silently refresh queue, no notification popup
+    // Rider marked as Remitted � silently refresh queue, no notification popup
     if (status === 'remitted') {
         if (shouldNotify) {
             registerRemittanceUpdate(deliveryId, status);
@@ -1866,6 +1913,7 @@ setInterval(() => {
             if (data.success && data.deliveries && data.deliveries.length > 0) {
                 let hasNew = false;
                 let hasReadyUpdate = false;
+                let hasPrepStatusUpdate = false;
                 const notifList = document.getElementById('notificationList');
                 const noNotif = document.getElementById('noNotifItem');
                 
@@ -1873,6 +1921,8 @@ setInterval(() => {
                     let delId = parseInt(d.Delivery_ID, 10);
                     let ordId = parseInt(d.Order_ID, 10) || 0;
                     let prepStatus = String(d.prep_status || '').toLowerCase();
+                    let prepStatusKey = String(delId);
+                    let previousPrepStatus = knownPrepStatuses[prepStatusKey] || '';
                     
                     // 1. Check for newly assigned delivery
                     if (!knownDeliveryIds.has(delId)) {
@@ -1912,11 +1962,25 @@ setInterval(() => {
                         
                         addRiderNotification(`Delivery #${delId} Ready`, 'Order is ready to pick up.', 'fa-check-circle', 'refreshQueueAjax(false); return false;');
                     }
+
+                    if (prepStatus && prepStatus !== previousPrepStatus) {
+                        knownPrepStatuses[prepStatusKey] = prepStatus;
+                        if (prepStatus === 'preparing') {
+                            hasPrepStatusUpdate = true;
+                            ToastNotification.fire({
+                                icon: 'info',
+                                title: 'Order Preparation Started',
+                                text: `Order #${ordId} (Delivery #${delId}) is now being prepared.`
+                            });
+                            addRiderNotification(`Delivery #${delId} Preparing`, 'Inventory staff started preparing this order.', 'fa-person-digging', 'refreshQueueAjax(false); return false;');
+                        }
+                    }
                 });
                 
-                if (hasNew || hasReadyUpdate) {
+                if (hasNew || hasReadyUpdate || hasPrepStatusUpdate) {
                     localStorage.setItem('rider_known_deliveries', JSON.stringify([...knownDeliveryIds]));
                     localStorage.setItem('rider_known_ready_deliveries', JSON.stringify([...knownReadyIds]));
+                    localStorage.setItem('rider_known_prep_statuses', JSON.stringify(knownPrepStatuses));
                     localStorage.setItem('rider_notif_count', notificationCount.toString());
                     if (notifList) localStorage.setItem('rider_notif_html', notifList.innerHTML);
 
@@ -1958,42 +2022,174 @@ function pollRiderRealtimeUpdates() {
 
 function promptCancelDelivery(deliveryId) {
     const reasonOptions = Array.isArray(window.deliveryCancellationReasons) ? window.deliveryCancellationReasons : [];
-    const optionsHtml = reasonOptions.map((reason) => {
+
+    // Build custom dropdown option rows
+    const customDropdownItems = reasonOptions.map((reason, idx) => {
         const escaped = String(reason)
             .replace(/&/g, '&amp;')
             .replace(/</g, '&lt;')
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;');
-        return `<option value="${escaped}">${escaped}</option>`;
+        const isOther = reason === 'Other';
+        return `<div class="cdr-option" data-value="${escaped}" onclick="selectCancelReason(this)">
+            <span class="cdr-option-label">${escaped}</span>
+            <span class="cdr-badge ${isOther ? 'cdr-badge-danger' : 'cdr-badge-default'}">${idx + 1}</span>
+        </div>`;
     }).join('');
 
     Swal.fire({
-        title: 'Mark Delivery as Returning?',
+        title: '',
         html: `
-            <div style="text-align:left;">
-                <label for="cancelDeliveryReason" style="display:block;font-size:0.82rem;font-weight:700;color:#475569;margin-bottom:0.45rem;">Cancellation Reason</label>
-                <select id="cancelDeliveryReason" class="swal2-select" style="display:flex;width:100%;margin:0 0 0.85rem 0;">
-                    <option value="">Select a reason</option>
-                    ${optionsHtml}
-                </select>
-                <label for="cancelDeliveryRemarks" style="display:block;font-size:0.82rem;font-weight:700;color:#475569;margin-bottom:0.45rem;">Remarks <span style="font-weight:500;color:#94a3b8;">(required for Other)</span></label>
-                <textarea id="cancelDeliveryRemarks" class="swal2-textarea" style="display:flex;width:100%;margin:0;" placeholder="Add extra details if needed..."></textarea>
+            <style>
+                @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+                .cdr-wrap * { font-family: 'Poppins', sans-serif !important; box-sizing: border-box; }
+                .cdr-header {
+                    background: linear-gradient(135deg, #991b1b 0%, #dc2626 50%, #b91c1c 100%);
+                    margin: -1.25rem -1.25rem 1.5rem -1.25rem;
+                    padding: 1.5rem 1.5rem 1.25rem;
+                    border-radius: 20px 20px 0 0;
+                    text-align: center;
+                }
+                .cdr-header-icon {
+                    width: 52px; height: 52px; border-radius: 50%;
+                    background: rgba(255,255,255,0.15);
+                    display: flex; align-items: center; justify-content: center;
+                    margin: 0 auto 0.75rem;
+                    font-size: 1.4rem; color: #fff;
+                }
+                .cdr-header-title {
+                    font-size: 1.1rem; font-weight: 800; color: #fff; margin: 0;
+                    letter-spacing: -0.01em;
+                }
+                .cdr-header-sub {
+                    font-size: 0.73rem; color: rgba(255,255,255,0.7); margin-top: 0.25rem; font-weight: 500;
+                }
+                .cdr-label {
+                    display: block; font-size: 0.68rem; font-weight: 700;
+                    color: #64748b; text-transform: uppercase; letter-spacing: 0.09em;
+                    margin-bottom: 0.45rem;
+                }
+                .cdr-trigger {
+                    display: flex; align-items: center; justify-content: space-between;
+                    width: 100%; padding: 0.8rem 1rem;
+                    background: #fff; border: 1.5px solid #c7d2fe;
+                    border-radius: 12px; cursor: pointer;
+                    font-size: 0.875rem; font-weight: 600; color: #94a3b8;
+                    transition: all 0.2s ease;
+                }
+                .cdr-trigger.has-value { color: #1e293b; border-color: #6366f1; background: #fafafe; }
+                .cdr-trigger:hover { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
+                .cdr-chevron { transition: transform 0.22s ease; font-size: 0.75rem; color: #a5b4fc; }
+                .cdr-chevron.open { transform: rotate(180deg); color: #6366f1; }
+                .cdr-dropdown {
+                    display: none; background: #fff; border-radius: 12px;
+                    border: 1.5px solid #e0e7ff; margin-top: 0.35rem;
+                    overflow: hidden; box-shadow: 0 12px 32px rgba(99,102,241,0.12);
+                    max-height: 220px; overflow-y: auto;
+                }
+                .cdr-dropdown.open { display: block; animation: cdrSlideIn 0.18s ease; }
+                @keyframes cdrSlideIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:translateY(0); } }
+                .cdr-option {
+                    display: flex; align-items: center; justify-content: space-between;
+                    padding: 0.7rem 1rem; cursor: pointer;
+                    border-bottom: 1px solid #f1f5f9;
+                    border-left: 3px solid transparent;
+                    transition: background 0.12s, border-left-color 0.12s;
+                }
+                .cdr-option:last-child { border-bottom: none; }
+                .cdr-option:hover { background: #f5f3ff; border-left-color: #a5b4fc; }
+                .cdr-option.selected { background: #eef2ff; border-left-color: #6366f1; }
+                .cdr-option-label { font-size: 0.875rem; font-weight: 600; color: #1e293b; }
+                .cdr-badge {
+                    min-width: 1.55rem; height: 1.55rem; padding: 0 0.35rem;
+                    border-radius: 9999px; font-size: 0.68rem; font-weight: 800;
+                    display: flex; align-items: center; justify-content: center;
+                }
+                .cdr-badge-default { background: #f1f5f9; color: #64748b; }
+                .cdr-badge-danger  { background: #fef2f2; color: #ef4444; }
+                .cdr-textarea {
+                    width: 100%; min-height: 82px; padding: 0.75rem 1rem;
+                    border-radius: 12px; border: 1.5px solid #e2e8f0;
+                    font-size: 0.875rem; font-weight: 500; color: #1e293b;
+                    resize: vertical; outline: none;
+                    transition: border-color 0.2s, box-shadow 0.2s;
+                    background: #fafafa;
+                }
+                .cdr-textarea:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.08); background: #fff; }
+                .cdr-textarea::placeholder { color: #cbd5e1; font-weight: 400; }
+                .swal2-popup.cdr-popup {
+                    border-radius: 24px !important; padding: 0 1.25rem 1.5rem !important;
+                    overflow: hidden;
+                    box-shadow: 0 24px 64px rgba(0,0,0,0.15) !important;
+                }
+                .swal2-popup.cdr-popup .swal2-actions { margin-top: 1.5rem !important; gap: 0.6rem !important; }
+                .swal2-popup.cdr-popup .swal2-confirm {
+                    border-radius: 12px !important; padding: 0.7rem 1.5rem !important;
+                    font-family: 'Poppins', sans-serif !important; font-weight: 700 !important;
+                    font-size: 0.875rem !important; letter-spacing: 0.01em !important;
+                    background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+                    box-shadow: 0 4px 14px rgba(220,38,38,0.35) !important;
+                }
+                .swal2-popup.cdr-popup .swal2-cancel {
+                    border-radius: 12px !important; padding: 0.7rem 1.5rem !important;
+                    font-family: 'Poppins', sans-serif !important; font-weight: 600 !important;
+                    font-size: 0.875rem !important; background: #f1f5f9 !important;
+                    color: #64748b !important;
+                }
+                .swal2-popup.cdr-popup .swal2-cancel:hover { background: #e2e8f0 !important; }
+                .swal2-popup.cdr-popup .swal2-validation-message {
+                    border-radius: 10px !important; font-family: 'Poppins', sans-serif !important;
+                    font-size: 0.8rem !important; margin: 0.5rem 0 0 !important;
+                }
+            </style>
+
+            <div class="cdr-wrap">
+                <div class="cdr-header">
+                    <div class="cdr-header-icon">
+                        <i class="fas fa-truck-arrow-right"></i>
+                    </div>
+                    <p class="cdr-header-title">Mark as Returning</p>
+                    <p class="cdr-header-sub">Select a reason to return this delivery</p>
+                </div>
+
+                <input type="hidden" id="cancelDeliveryReason" value="">
+
+                <div style="margin-bottom:1.1rem;">
+                    <label class="cdr-label">Cancellation Reason <span style="color:#ef4444">*</span></label>
+                    <button type="button" id="cdrTrigger" class="cdr-trigger" onclick="toggleCancelDropdown()">
+                        <span id="cdrTriggerText" style="font-family:'Poppins',sans-serif;">-- Choose a reason --</span>
+                        <i class="fas fa-chevron-down cdr-chevron" id="cdrChevron"></i>
+                    </button>
+                    <div class="cdr-dropdown" id="cdrDropdown">
+                        ${customDropdownItems.length > 0 ? customDropdownItems : '<div style="padding:1rem;text-align:center;color:#94a3b8;font-size:0.82rem;font-family:Poppins,sans-serif;">No reasons configured</div>'}
+                    </div>
+                </div>
+
+                <div>
+                    <label class="cdr-label">
+                        Remarks
+                        <span style="text-transform:none;letter-spacing:0;font-weight:500;color:#94a3b8;font-size:0.68rem;"> — required for "Other"</span>
+                    </label>
+                    <textarea id="cancelDeliveryRemarks" class="cdr-textarea" placeholder="Add extra details if needed..."></textarea>
+                </div>
             </div>
         `,
-        icon: 'warning',
         showCancelButton: true,
-        confirmButtonColor: '#ef4444',
-        confirmButtonText: 'Submit Reason',
+        confirmButtonText: '<i class="fas fa-paper-plane" style="margin-right:6px;"></i> Submit',
+        cancelButtonText: 'Go Back',
         focusConfirm: false,
+        customClass: {
+            popup: 'cdr-popup',
+        },
         preConfirm: () => {
             const reason = document.getElementById('cancelDeliveryReason')?.value?.trim() || '';
             const remarks = document.getElementById('cancelDeliveryRemarks')?.value?.trim() || '';
             if (!reason) {
-                Swal.showValidationMessage('Please select a cancellation reason.');
+                Swal.showValidationMessage('⚠️ Please select a cancellation reason.');
                 return false;
             }
             if (reason === 'Other' && !remarks) {
-                Swal.showValidationMessage('Remarks are required when "Other" is selected.');
+                Swal.showValidationMessage('⚠️ Remarks are required when "Other" is selected.');
                 return false;
             }
 
@@ -2020,6 +2216,36 @@ function promptCancelDelivery(deliveryId) {
                 })
                 .catch(() => Swal.fire('Error', 'Network error', 'error'));
         }
+    });
+}
+
+function toggleCancelDropdown() {
+    const dropdown = document.getElementById('cdrDropdown');
+    const chevron  = document.getElementById('cdrChevron');
+    if (!dropdown || !chevron) return;
+    const isOpen = dropdown.classList.contains('open');
+    dropdown.classList.toggle('open', !isOpen);
+    chevron.classList.toggle('open', !isOpen);
+}
+
+function selectCancelReason(el) {
+    const value = el.getAttribute('data-value') || '';
+    const hiddenInput  = document.getElementById('cancelDeliveryReason');
+    const triggerText  = document.getElementById('cdrTriggerText');
+    const trigger      = document.getElementById('cdrTrigger');
+    const dropdown     = document.getElementById('cdrDropdown');
+    const chevron      = document.getElementById('cdrChevron');
+
+    if (hiddenInput)  hiddenInput.value = value;
+    if (triggerText)  triggerText.textContent = value;
+    if (trigger)      trigger.classList.add('has-value');
+    if (dropdown)     dropdown.classList.remove('open');
+    if (chevron)      chevron.classList.remove('open');
+
+    // Highlight selected row
+    document.querySelectorAll('.cdr-option').forEach(opt => {
+        opt.style.background = opt === el ? '#f0f0ff' : 'white';
+        opt.style.borderLeft = opt === el ? '3px solid #6366f1' : '3px solid transparent';
     });
 }
 
@@ -2134,6 +2360,14 @@ function initRealtimeRiderSocket() {
                     return;
                 }
                 handleRiderReadyUpdate(data, true);
+                return;
+            }
+
+            if (payload.event === 'prep_task.status_updated') {
+                const status = String(data.status || '').toLowerCase();
+                if (status === 'preparing' || status === 'ready') {
+                    refreshQueueAjax(true);
+                }
                 return;
             }
 

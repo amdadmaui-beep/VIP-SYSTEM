@@ -33,7 +33,7 @@ $migration = [
         "ALTER TABLE rider_remittance_tracking MODIFY remittance_status VARCHAR(50) DEFAULT 'Exact'",
         "ALTER TABLE sales MODIFY remittance_status VARCHAR(50) DEFAULT 'Exact'",
         "ALTER TABLE shift_activity_log MODIFY activity_type VARCHAR(50) NOT NULL",
-        "ALTER TABLE user MODIFY rider_availability_status VARCHAR(50) NOT NULL DEFAULT 'Available'",
+        // Removed: rider_availability_status moved to rider_settings table
     ],
 
     // Batch 3: Unify collations

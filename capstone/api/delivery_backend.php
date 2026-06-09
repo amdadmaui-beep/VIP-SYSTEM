@@ -91,6 +91,26 @@ function isJsonDeliveryRequest(): bool {
     return strpos($accept, 'application/json') !== false;
 }
 
+/**
+ * Respond with JSON for AJAX requests, otherwise redirect.
+ */
+function respondDelivery($conn, bool $success, string $message, ?string $redirect = null): void {
+    if ($redirect === null) {
+        $redirect = $_POST['redirect_to'] ?? '../pages/delivery.php';
+    }
+    if (!preg_match('/^\.\.\/pages\/[\w]+\.php$/', $redirect)) {
+        $redirect = '../pages/delivery.php';
+    }
+    if (isJsonDeliveryRequest()) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => $success, 'message' => $message]);
+        exit;
+    }
+    $key = $success ? 'success' : 'error';
+    header("Location: {$redirect}?{$key}=" . urlencode($message));
+    exit;
+}
+
 // Handle different delivery operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Protection: Validate token for state-changing POST actions - Security Fix
@@ -582,14 +602,22 @@ function handleAssignRider($conn) {
     $fields[] = "updated_at = NOW()";
     $params[] = $delivery_id;
 
-    $stmt = $conn->prepare("UPDATE delivery SET " . implode(", ", $fields) . " WHERE Delivery_ID = ?");
-    $stmt->execute($params);
+    try {
+        $conn->beginTransaction();
+        $stmt = $conn->prepare("UPDATE delivery SET " . implode(", ", $fields) . " WHERE Delivery_ID = ?");
+        $stmt->execute($params);
 
-    if ($existing_rider_id > 0 && $existing_rider_id !== (int)$rider_id) {
-        syncRiderAvailabilityForUser($conn, $existing_rider_id);
-    }
-    if ($rider_id !== null && $rider_id > 0) {
-        syncRiderAvailabilityForUser($conn, $rider_id);
+        if ($existing_rider_id > 0 && $existing_rider_id !== (int)$rider_id) {
+            syncRiderAvailabilityForUser($conn, $existing_rider_id);
+        }
+        if ($rider_id !== null && $rider_id > 0) {
+            syncRiderAvailabilityForUser($conn, $rider_id);
+        }
+        $conn->commit();
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        header('Location: ../pages/delivery.php?error=' . urlencode('Failed to assign rider: ' . $e->getMessage()));
+        exit;
     }
     header('Location: ../pages/delivery.php?success=' . urlencode($rider_id ? 'Rider assigned' : 'Rider unassigned'));
     logActivity('DELIVERY', ($rider_id ? "Assigned rider $rider_name" : "Unassigned rider") . " to Delivery #$delivery_id", $delivery_id);
@@ -1099,8 +1127,11 @@ function handleTransferReturningDelivery(PDO $conn, int $user_id): void
         $scheduled_status = getValidOrderStatus($conn, 'Scheduled for Delivery', ['Scheduled for Delivery', 'Requested', 'pending']);
         $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")->execute([$scheduled_status, $order_id]);
 
-        if ($old_rider_id > 0 && riderWorkflowHasColumn($conn, 'user', 'rider_availability_status')) {
-            $conn->prepare("UPDATE user SET rider_availability_status = 'Off Duty' WHERE User_ID = ?")->execute([$old_rider_id]);
+        if ($old_rider_id > 0) {
+            ensureRiderWorkflowSchema($conn);
+            $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                            VALUES (?, 'Off Duty', NOW())
+                            ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()")->execute([$old_rider_id]);
         }
 
         if ($new_rider_id > 0) {

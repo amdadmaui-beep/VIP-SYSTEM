@@ -381,14 +381,14 @@ if ($rider_profile_picture_db !== '' && is_file($capstoneRoot . '/' . $rider_pro
     $rider_profile_pic_src = '../' . $rider_profile_picture_db . '?v=' . time();
 }
 
-// Fetch rider availability status
+// Fetch rider availability status from rider_settings
 $rider_availability_status = 'Available';
 try {
-    $avStmt = $conn->prepare("SELECT rider_availability_status FROM user WHERE User_ID = ?");
+    $avStmt = $conn->prepare("SELECT availability_status FROM rider_settings WHERE User_ID = ?");
     $avStmt->execute([$user_id]);
     $avRow = $avStmt->fetch(PDO::FETCH_ASSOC);
-    if ($avRow && !empty($avRow['rider_availability_status'])) {
-        $rider_availability_status = (string)$avRow['rider_availability_status'];
+    if ($avRow && !empty($avRow['availability_status'])) {
+        $rider_availability_status = (string)$avRow['availability_status'];
     }
 } catch (Throwable $e) {
     $rider_availability_status = 'Available';

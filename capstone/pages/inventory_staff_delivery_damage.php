@@ -244,11 +244,10 @@ $pending_count = $total_pending;
                         </div>
                         <p class="text-sm text-slate-600 mb-4 bg-slate-50 p-3 rounded-xl italic leading-relaxed font-medium">"<?php echo htmlspecialchars($row['reason']); ?>"</p>
                         
-                        <?php if (!empty($row['photo_path'])): ?>
-                            <button type="button" onclick="showPhotoModal('../<?php echo htmlspecialchars($row['photo_path']); ?>')" class="w-full mb-3 py-2.5 rounded-xl border-2 border-dashed border-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 hover:border-indigo-200 transition-all">
-                                <i data-lucide="image" class="w-4 h-4"></i> View photo
+                        <?php $photos = explode(',', (string)$row['photo_path']); ?>
+                            <button type="button" onclick="showPhotoModal('../<?php echo htmlspecialchars(trim($photos[0])); ?>')" class="w-full mb-3 py-2.5 rounded-xl border-2 border-dashed border-indigo-100 text-indigo-600 text-xs font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 hover:border-indigo-200 transition-all">
+                                <i data-lucide="image" class="w-4 h-4"></i> View photo<?php if (count($photos) > 1): ?> <span class="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.5 rounded-full">+<?php echo count($photos)-1; ?></span><?php endif; ?>
                             </button>
-                        <?php endif; ?>
                         
                         <div class="flex gap-2 pt-2 border-t border-slate-100">
                             <button type="button" onclick="ddrApprove(<?php echo (int) $row['report_id']; ?>)" class="flex-1 py-3 rounded-xl bg-blue-600 text-white text-xs font-black shadow-lg shadow-blue-600/20 hover:bg-blue-700 transition-all active:scale-95">Approve</button>

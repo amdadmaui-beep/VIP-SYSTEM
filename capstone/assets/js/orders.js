@@ -338,7 +338,8 @@ async function openEditOrder(orderId) {
             unit: item.unit || 'unit',
             quantity: parseFloat(item.quantity || 0),
             price: parseFloat(item.unit_price || 0),
-            wPrice: parseFloat(item.unit_price || 0)
+            wPrice: parseFloat(item.unit_price || 0),
+            image_url: (productsData.find(p => p.Product_ID === item.product_id) || {}).image_url || null
         }));
         updateLastOrderButtonState();
         renderCart();
@@ -449,7 +450,8 @@ async function loadLastOrderForSelectedCustomer() {
             unit: item.unit || 'unit',
             quantity: parseFloat(item.quantity || 0),
             price: parseFloat(item.unit_price || 0),
-            wPrice: parseFloat(item.unit_price || 0)
+            wPrice: parseFloat(item.unit_price || 0),
+            image_url: (productsData.find(p => p.Product_ID === parseInt(item.product_id || 0, 10)) || {}).image_url || null
         })).filter((item) => item.id > 0 && item.quantity > 0);
 
         onCustomerChange(customerSelect);
@@ -532,24 +534,39 @@ function renderProductCatalog() {
         
         const priceToDisplay = parseFloat(product.wholesale_price).toFixed(2);
         const currentQty = parseFloat(product.current_quantity || 0);
-        const qtyBadgeClass = currentQty > 10 ? 'qty-high' : 'qty-low';
         
+        // Define badges logic like in POS
+        let badgeClass = 'badge-success';
+        let badgeText = 'QTY: ' + currentQty;
+        if (currentQty <= 0) {
+            badgeClass = 'badge-danger';
+            badgeText = 'OUT';
+        } else if (currentQty <= 5) {
+            badgeClass = 'badge-warning';
+            badgeText = 'LOW: ' + currentQty;
+        }
+
         const iconName = product.product_name.toLowerCase().includes('crush') ? 'fa-snowflake' : 'fa-cubes';
         
         const card = document.createElement('div');
-        card.className = 'product-card-pos';
+        card.className = 'product-card-pos slide-in'; // Match POS CSS class
+        card.style.position = 'relative';
         card.onclick = () => addToCart(product);
         
+        // Generate image HTML
+        let imageHtml = `<div class="product-card-icon"><i class="fas ${iconName}"></i></div>`;
+        if (product.image_url && product.image_url.trim() !== '') {
+            imageHtml = `<img src="../../uploads/products/${product.image_url}" alt="${product.product_name}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:0.5rem; background:#f8fafc;" onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('afterbegin','<div class=\'product-card-icon\'><i class=\'fas fa-cubes\'></i></div>')">`;
+        }
+        
         card.innerHTML = `
-            <div class="product-card-icon">
-                <i class="fas ${iconName}"></i>
-            </div>
+            ${imageHtml}
             <div class="product-card-info">
                 <h4>${product.product_name}</h4>
                 <p>${product.unit || 'Unit'}</p>
             </div>
-            <div class="product-card-price">₱${priceToDisplay}</div>
-            <span class="qty-badge-pos ${qtyBadgeClass}">${currentQty} left</span>
+            <span class="product-card-price">₱${priceToDisplay}</span>
+            <span class="qty-badge-pos ${badgeClass}">${badgeText}</span>
         `;
         
         catalogContainer.appendChild(card);
@@ -587,7 +604,8 @@ function addToCart(product) {
             unit: product.unit,
             price: product.wholesale_price,
             wPrice: product.wholesale_price,
-            quantity: 1
+            quantity: 1,
+            image_url: product.image_url || null
         });
     }
     renderCart();
@@ -642,10 +660,16 @@ function renderCart() {
         const row = document.createElement('div');
         row.className = 'cart-item-row-pos';
         
+        // Generate thumbnail for cart item
+        const thumbHtml = item.image_url && item.image_url.trim() !== ''
+            ? `<img src="../../uploads/products/${item.image_url}" alt="${item.name}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#f8fafc;" onerror="this.outerHTML='<div style=\'width:44px;height:44px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;\'><i class=\'fas fa-cubes\' style=\'color:#3b82f6;font-size:1.1rem;\'></i></div>'">`
+            : `<div style="width:44px;height:44px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fas fa-cubes" style="color:#3b82f6;font-size:1.1rem;"></i></div>`;
+        
         row.innerHTML = `
+            ${thumbHtml}
             <div class="cart-item-info">
                 <h5>${item.name}</h5>
-                <p>₱${parseFloat(item.price).toFixed(2)} / ${item.unit || 'unit'}</p>
+                <p>₱${parseFloat(item.price).toFixed(2)} × ${item.quantity}</p>
             </div>
             
             <div class="cart-item-controls">
@@ -654,13 +678,12 @@ function renderCart() {
                     onchange="setCartItemQty(${index}, this.value)"
                     onclick="this.select()">
                 <button type="button" class="qty-btn" onclick="updateCartItemQty(${index}, 1)">+</button>
-                
-                <div class="cart-item-remove" onclick="removeFromCart(${index})" title="Remove Item">
-                    <i class="fas fa-trash-alt"></i>
-                </div>
             </div>
             
             <div class="cart-item-subtotal">₱${subtotal.toFixed(2)}</div>
+            <div style="color:#ef4444;cursor:pointer;padding:0.25rem;" onclick="removeFromCart(${index})" title="Remove Item">
+                <i class="fas fa-times" style="font-size:1rem;"></i>
+            </div>
         `;
         
         container.appendChild(row);

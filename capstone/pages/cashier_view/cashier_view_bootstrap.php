@@ -21,13 +21,10 @@ $can_cashier_delivery_orders = isModuleAllowedForUser($conn, (int)$user_id, 'cas
 $can_cashier_ar_sales = isModuleAllowedForUser($conn, (int)$user_id, 'cashier_ar_sales', true);
 
 // Fetch products with computed available stock:
-// available = physical(products.quantity) - reserved(active order states)
-$products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.retail_price
-                   FROM products p 
-                   LEFT JOIN units u ON p.unit_id = u.unit_id 
-                   WHERE p.is_discontinued = 0 
-                   ORDER BY p.product_name";
-$products_res = $conn->query($products_query)->fetchAll(PDO::FETCH_ASSOC);
+// Base product list is cached (60s TTL) to reduce DB load;
+// stock data is always live since it changes with every sale.
+require_once __DIR__ . '/../../includes/product_cache.php';
+$products_res = getCachedProducts($conn, 60);
 $productIds = array_values(array_filter(array_map(static fn ($r) => (int)($r['Product_ID'] ?? 0), $products_res), static fn ($id) => $id > 0));
 $onHandMap = !empty($productIds) ? getPhysicalStockByProductIds($conn, $productIds) : [];
 $reservedMap = !empty($productIds) ? getReservedStockByProductIds($conn, $productIds) : [];

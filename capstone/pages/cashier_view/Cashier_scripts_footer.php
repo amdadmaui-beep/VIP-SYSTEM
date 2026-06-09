@@ -1,6 +1,6 @@
 
 
-    <script src="../assets/js/script.js"></script>
+    <script src="../assets/js/script.js<?= $cbScript ?>"></script>
     <script>
         const CAN_EDIT_SALE_CUSTOMER = false;
 
@@ -39,8 +39,11 @@
             
             try {
                 const response = await fetch(`../api/sales_backend.php?action=get_sale_details&sale_id=${saleId}`);
+                if (!response.ok) {
+                    content.innerHTML = `<div class="alert alert-danger">Server error (${response.status}). Please try again.</div>`;
+                    return;
+                }
                 const result = await response.json();
-                updateShiftCsrfToken(result.csrf_token);
                 
                 if (result.success) {
                     const sale = result.data.sale;
@@ -78,7 +81,7 @@
                         <div class="receipt-header">
                             <h3>VIP Villanueva Ice Plant</h3>
                             <p>Official Receipt</p>
-                            <p>Brgy. San Jose, Sto. Tomas, Batangas</p>
+                            <p>San Martin, Villanueva, Misamis Oriental</p>
                             <p>Tel: (043) 784-XXXX</p>
                         </div>
                         
@@ -321,7 +324,7 @@
 
         async function openZReadModal() {
             if (!CAN_CASHIER_ZREAD) {
-                Swal.fire('Access Restricted', "You can't access this module right now.", 'warning');
+                Swal.fire({ icon: 'warning', title: 'Access Restricted', text: "Z-Read is not enabled for your account. Ask a manager to enable 'cashier_z_read' permission.", confirmButtonText: 'OK' });
                 return;
             }
             document.getElementById('zReadModal').style.display = 'block';
@@ -402,11 +405,21 @@
             const socketUrl = `${protocol}://${location.hostname}:8090`;
             let socket = null;
             let reconnectDelay = 1000;
+            let retryCount = 0;
+            const MAX_RETRIES = 5;
 
             const connect = () => {
+                if (retryCount >= MAX_RETRIES) {
+                    if (retryCount === MAX_RETRIES) {
+                        console.warn('[WS] WebSocket server unavailable after ' + MAX_RETRIES + ' attempts. Real-time updates disabled.');
+                        retryCount++;
+                    }
+                    return;
+                }
                 try {
                     socket = new WebSocket(socketUrl);
                 } catch (error) {
+                    retryCount++;
                     setTimeout(connect, reconnectDelay);
                     reconnectDelay = Math.min(reconnectDelay * 2, 15000);
                     return;
@@ -414,6 +427,7 @@
 
                 socket.addEventListener('open', () => {
                     reconnectDelay = 1000;
+                    retryCount = 0;
                 });
 
                 socket.addEventListener('message', (event) => {
@@ -441,6 +455,7 @@
                 });
 
                 socket.addEventListener('close', () => {
+                    retryCount++;
                     setTimeout(connect, reconnectDelay);
                     reconnectDelay = Math.min(reconnectDelay * 2, 15000);
                 });

@@ -71,5 +71,6 @@ $dashboardRoleCss = $isOwnerDashboard ? 'assets/css/owner.css' : 'assets/css/man
     <script src="https://unpkg.com/lucide@1.16.0/dist/umd/lucide.min.js" integrity="sha384-ZgnJ3Zpr70Xoify35DjOZWqHib1iYJBpYpQUIEpDASG9+fJ745WzNQuC004dwU0W" crossorigin="anonymous"></script>
     <!-- ApexCharts -->
     <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script src="assets/js/offline_support.js"></script>
     <link rel="stylesheet" href="<?php echo htmlspecialchars($dashboardRoleCss, ENT_QUOTES, 'UTF-8'); ?>">
 </head>

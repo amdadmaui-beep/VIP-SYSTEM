@@ -235,6 +235,78 @@ function sendARBalanceReminderEmail(string $toEmail, string $toName, int $arId, 
     }
 }
 
+function sendARCreatedEmail(string $toEmail, string $toName, int $arId, float $invoiceAmount, float $amountDue, string $dueDate, int $saleId = 0): array
+{
+    $setup = createConfiguredMailer();
+    if (!$setup['ok']) return $setup;
+    $mail = $setup['mail'];
+
+    try {
+        $mail->addAddress($toEmail, $toName !== '' ? $toName : $toEmail);
+        $mail->Subject = 'Account Receivable Created - VIP Ice Plant';
+
+        $safeName = htmlspecialchars($toName ?: 'Customer', ENT_QUOTES, 'UTF-8');
+        $safeDueDate = htmlspecialchars($dueDate, ENT_QUOTES, 'UTF-8');
+        $reference = 'AR-' . (int)$arId;
+        $saleReference = $saleId > 0 ? '#' . (int)$saleId : 'N/A';
+
+        $mail->Body = '
+<div style="background-color:#f8fafc;padding:36px 10px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <table align="center" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <tr>
+      <td style="padding:28px 32px;background:linear-gradient(135deg,#4f46e5,#7c3aed);color:#ffffff;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.88;">Account Receivable Notice</div>
+        <h2 style="margin:6px 0 0;font-size:22px;">Reference ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') . '</h2>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:28px 32px;color:#334155;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Hello <strong>' . $safeName . '</strong>,</p>
+        <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">An account receivable has been recorded for your delivery order with VIP Ice Plant.</p>
+        <table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;">AR Reference</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;">' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Sale Reference</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">' . htmlspecialchars($saleReference, ENT_QUOTES, 'UTF-8') . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Invoice Amount</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">PHP ' . number_format($invoiceAmount, 2) . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Total Balance</td>
+            <td style="padding:12px 16px;text-align:right;color:#b45309;font-weight:800;border-top:1px solid #e2e8f0;">PHP ' . number_format($amountDue, 2) . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Due Date</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">' . $safeDueDate . '</td>
+          </tr>
+        </table>
+        <p style="margin:18px 0 0;font-size:14px;line-height:1.6;color:#64748b;">Please use the AR reference above when settling your balance.</p>
+      </td>
+    </tr>
+  </table>
+</div>';
+
+        $mail->AltBody = "Hello " . ($toName ?: 'Customer')
+            . ",\n\nAn account receivable has been recorded for your delivery order."
+            . "\nAR Reference: " . $reference
+            . "\nSale Reference: " . $saleReference
+            . "\nInvoice Amount: PHP " . number_format($invoiceAmount, 2)
+            . "\nTotal Balance: PHP " . number_format($amountDue, 2)
+            . "\nDue Date: " . $dueDate
+            . "\n\nPlease use the AR reference above when settling your balance.";
+
+        $mail->send();
+        return ['ok' => true, 'message' => 'AR notice email sent successfully.'];
+    } catch (Exception $e) {
+        return ['ok' => false, 'message' => 'Failed to send AR notice email: ' . (string)$mail->ErrorInfo];
+    }
+}
+
 function sendOrderOnTheWayEmail(string $toEmail, string $toName, int $orderId, int $deliveryId, float $totalAmount = 0): array
 {
     $setup = createConfiguredMailer();
@@ -464,4 +536,3 @@ function sendDeliverySaleReceiptEmail(string $toEmail, string $toName, array $sa
         return ['ok' => false, 'message' => 'Failed to send receipt email: ' . (string)$mail->ErrorInfo];
     }
 }
-

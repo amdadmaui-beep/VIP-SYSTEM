@@ -882,9 +882,6 @@ function formatPeso($amount) {
                                 <button onclick="sendARReminder(<?php echo $ar['AR_ID']; ?>, '<?php echo htmlspecialchars(addslashes($ar['customer_name'] ?? 'Unknown')); ?>', '<?php echo addslashes($ar['email'] ?? ''); ?>', <?php echo (float)$ar['amount_due']; ?>, '<?php echo addslashes($ar['due_date'] ?? ''); ?>')" title="Send Email Reminder" style="width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.9rem; background: #dbeafe; color: #2563eb;" onmouseover="this.style.background='#2563eb'; this.style.color='white'; this.style.transform='scale(1.1)';" onmouseout="this.style.background='#dbeafe'; this.style.color='#2563eb'; this.style.transform='scale(1)';">
                                     <i class="fas fa-bell"></i>
                                 </button>
-                                <button onclick="sendARReminderSms(<?php echo $ar['AR_ID']; ?>, '<?php echo htmlspecialchars(addslashes($ar['customer_name'] ?? 'Unknown')); ?>', '<?php echo addslashes($ar['phone_number'] ?? ''); ?>', <?php echo (float)$ar['amount_due']; ?>, '<?php echo addslashes($ar['due_date'] ?? ''); ?>')" title="Send SMS Reminder" style="width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.9rem; background: #fef3c7; color: #d97706;" onmouseover="this.style.background='#d97706'; this.style.color='white'; this.style.transform='scale(1.1)';" onmouseout="this.style.background='#fef3c7'; this.style.color='#d97706'; this.style.transform='scale(1)';">
-                                    <i class="fas fa-comment-dots"></i>
-                                </button>
                                 <?php endif; ?>
                                 <button onclick="viewARDetails(<?php echo $ar['AR_ID']; ?>)" title="View Details" style="width: 38px; height: 38px; border-radius: 10px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); font-size: 0.9rem; background: #f1f5f9; color: #64748b;" onmouseover="this.style.background='#64748b'; this.style.color='white'; this.style.transform='scale(1.1)';" onmouseout="this.style.background='#f1f5f9'; this.style.color='#64748b'; this.style.transform='scale(1)';">
                                     <i class="fas fa-eye"></i>
@@ -1721,21 +1718,6 @@ async function sendARReminder(arId, customerName, email, amountDue, dueDate) {
     openModal('emailConfirmModal');
 }
 
-async function sendARReminderSms(arId, customerName, phone, amountDue, dueDate) {
-    const message = `Send SMS reminder to ${customerName}${phone ? ` (${phone})` : ''}?<br><br>`
-        + `Reference: <strong>AR-${arId}</strong><br>`
-        + `Balance Due: <strong>₱${Number(amountDue || 0).toLocaleString('en-US', {minimumFractionDigits: 2})}</strong><br>`
-        + `Due Date: <strong>${dueDate}</strong>`;
-
-    pendingReminderPayload = { arId, channel: 'sms' };
-    document.getElementById('emailConfirmTitle').innerHTML = '<i class="fas fa-comment-dots"></i> Confirm SMS Reminder';
-    document.getElementById('emailSendingTitle').innerHTML = '<i class="fas fa-comment-dots"></i> Sending SMS Reminder';
-    document.getElementById('emailSendingMessage').textContent = 'Please wait while we send the SMS reminder to the customer.';
-    document.getElementById('emailConfirmActionBtn').innerHTML = '<i class="fas fa-paper-plane"></i> Send SMS';
-    document.getElementById('emailConfirmMessage').innerHTML = message;
-    openModal('emailConfirmModal');
-}
-
 function showEmailResultModal(success, message) {
     const title = document.getElementById('emailResultTitle');
     const text = document.getElementById('emailResultMessage');
@@ -1759,10 +1741,8 @@ async function confirmSendARReminder() {
     closeModal('emailConfirmModal');
     openModal('emailSendingModal');
     const sendStartedAt = Date.now();
-    const channel = pendingReminderPayload.channel === 'sms' ? 'sms' : 'email';
-
     const formData = new FormData();
-    formData.append('action', channel === 'sms' ? 'send_ar_reminder_sms' : 'send_ar_reminder_email');
+    formData.append('action', 'send_ar_reminder_email');
     formData.append('ar_id', pendingReminderPayload.arId);
     formData.append('csrf_token', csrfToken);
 
@@ -1779,12 +1759,12 @@ async function confirmSendARReminder() {
         }
         if (data.success) {
             reloadAfterEmailResultClose = true;
-            showEmailResultModal(true, channel === 'sms' ? 'Reminder sent successfully via SMS!' : 'Reminder sent successfully via email!');
+            showEmailResultModal(true, 'Reminder sent successfully via email!');
         } else {
-            showEmailResultModal(false, `Failed to send ${channel.toUpperCase()} reminder: ` + (data.error || 'Unknown error'));
+            showEmailResultModal(false, 'Failed to send email reminder: ' + (data.error || 'Unknown error'));
         }
     } catch (error) {
-        showEmailResultModal(false, `Error sending ${channel.toUpperCase()} reminder.`);
+        showEmailResultModal(false, 'Error sending email reminder.');
         console.error(error);
     } finally {
         pendingReminderPayload = null;

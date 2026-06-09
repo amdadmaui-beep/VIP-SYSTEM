@@ -786,6 +786,49 @@ body {
 }
 
 /* Form Styles */
+.ops-page-banner {
+    position: relative;
+    overflow: hidden;
+    border-radius: 24px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    color: #ffffff;
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    box-shadow: 0 20px 40px rgba(99, 102, 241, 0.24);
+}
+
+.ops-page-banner::before {
+    content: '';
+    position: absolute;
+    top: -80px;
+    right: -70px;
+    width: 260px;
+    height: 260px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    pointer-events: none;
+}
+
+.ops-page-banner h1 {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 0;
+    color: #ffffff;
+    font-size: 1.85rem;
+    font-weight: 700;
+}
+
+.ops-page-banner p {
+    position: relative;
+    z-index: 1;
+    margin: 0.5rem 0 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 0.98rem;
+}
+
 .form-container {
     background: white;
     border-radius: 24px;

@@ -306,8 +306,11 @@ try {
     }
 
     // Create the AR record for the remaining balance
+    $ar_id = 0;
+    $ar_due_date = '';
     if ($ar_balance > 0) {
         $due_date = date('Y-m-d', strtotime('+' . $aging_days . ' days'));
+        $ar_due_date = $due_date;
         $ar_status = $cash_received > 0 ? 'Partial' : 'Open';
 
         $ar_stmt = $conn->prepare("
@@ -340,6 +343,7 @@ try {
 
     // Send receipt email
     $email_sent = false;
+    $ar_notice_sent = false;
     if (!empty($customer_email) && filter_var($customer_email, FILTER_VALIDATE_EMAIL)) {
         try {
             $email_items = [];
@@ -369,6 +373,19 @@ try {
 
             $mailResult = sendDeliverySaleReceiptEmail($customer_email, $customer_name, $saleDetails, $email_items);
             $email_sent = $mailResult['ok'] ?? false;
+
+            if ($ar_id > 0 && $ar_balance > 0 && function_exists('sendARCreatedEmail')) {
+                $arMailResult = sendARCreatedEmail(
+                    $customer_email,
+                    $customer_name,
+                    $ar_id,
+                    $total_amount_to_collect,
+                    $ar_balance,
+                    $ar_due_date,
+                    $sale_id
+                );
+                $ar_notice_sent = $arMailResult['ok'] ?? false;
+            }
         } catch (Throwable $e) {
             error_log("Failed to send AR receipt email: " . $e->getMessage());
         }
@@ -392,8 +409,10 @@ try {
         'success' => true,
         'message' => 'Delivery posted to AR successfully',
         'sale_id' => $sale_id,
+        'ar_id' => $ar_id,
         'ar_balance' => $ar_balance,
         'email_sent' => $email_sent,
+        'ar_notice_sent' => $ar_notice_sent,
         'expected_remittance' => $total_expected_remittance,
         'damaged_value' => $total_damaged_value,
         'cash_received' => $cash_received,

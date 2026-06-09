@@ -42,7 +42,7 @@ while ($cat = $categories_result->fetch(PDO::FETCH_ASSOC)) {
 }
 
 // Fetch products for order items
-$products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.wholesale_price, p.retail_price, c.slug as category_slug
+$products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.wholesale_price, p.retail_price, p.image_url, c.slug as category_slug
     FROM products p 
     LEFT JOIN units u ON p.unit_id = u.unit_id 
     LEFT JOIN product_categories c ON p.category_id = c.category_id
@@ -230,13 +230,18 @@ if (!$orders_result) {
     <title>Orders - VIP Villanueva Ice Plant</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g" crossorigin="anonymous">
     <link rel="stylesheet" href="../assets/css/style.css?v=<?php echo filemtime(__DIR__ . '/../../assets/css/style.css'); ?>">
     <link rel="stylesheet" href="../assets/css/orders.css?v=<?php echo filemtime(__DIR__ . '/../../assets/css/orders.css'); ?>">
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" integrity="sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V" crossorigin="anonymous">
     <script src="https://unpkg.com/sweetalert2@11"></script>
     <style>
+        /* eGov.ph Design Language - Orders Module */
+        body, .dashboard-wrapper {
+            font-family: 'Inter', sans-serif !important;
+        }
+
         /* Order Stats Cards */
         .stats-grid {
             display: grid;
@@ -262,12 +267,13 @@ if (!$orders_result) {
 
         .stat-card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.15);
+            box-shadow: 0 8px 25px rgba(0, 56, 168, 0.12);
+            border-color: #c7d7f5;
         }
 
         .stat-card.active {
-            border-color: #6366f1;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.2);
+            border-color: #0038A8;
+            box-shadow: 0 4px 15px rgba(0, 56, 168, 0.18);
         }
 
         .stat-icon {
@@ -280,11 +286,11 @@ if (!$orders_result) {
             font-size: 1.25rem;
         }
 
-        .stat-icon.all { background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%); color: white; }
+        .stat-icon.all { background: linear-gradient(135deg, #0038A8 0%, #002b80 100%); color: white; }
         .stat-icon.pending { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); color: #b45309; }
-        .stat-icon.scheduled { background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%); color: #4338ca; }
+        .stat-icon.scheduled { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); color: #0038A8; }
         .stat-icon.completed { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); color: #15803d; }
-        .stat-icon.cancelled { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #dc2626; }
+        .stat-icon.cancelled { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #CE1126; }
 
         .stat-content h4 {
             font-size: 0.75rem;
@@ -302,11 +308,11 @@ if (!$orders_result) {
             margin: 0;
         }
 
-        /* Improved Header */
+        /* eGov.ph Header Banner */
         .page-header-banner {
-            background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
-            border-radius: 24px;
-            padding: 2rem;
+            background: linear-gradient(135deg, #0038A8 0%, #002b80 100%);
+            border-radius: 20px;
+            padding: 1.75rem 2rem;
             color: white;
             margin-bottom: 1.5rem;
             display: flex;
@@ -314,7 +320,7 @@ if (!$orders_result) {
             align-items: center;
             flex-wrap: wrap;
             gap: 1rem;
-            box-shadow: 0 20px 40px rgba(99, 102, 241, 0.25);
+            box-shadow: 0 20px 40px rgba(0, 56, 168, 0.25);
             position: relative;
             overflow: hidden;
         }
@@ -323,16 +329,28 @@ if (!$orders_result) {
             content: '';
             position: absolute;
             top: -50%;
-            right: -10%;
-            width: 300px;
-            height: 300px;
-            background: rgba(255,255,255,0.08);
+            right: -5%;
+            width: 280px;
+            height: 280px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .page-header-banner::after {
+            content: '';
+            position: absolute;
+            bottom: -60%;
+            left: 5%;
+            width: 200px;
+            height: 200px;
+            background: rgba(255, 255, 255, 0.04);
             border-radius: 50%;
             pointer-events: none;
         }
 
         .header-content h1 {
-            font-size: 1.75rem;
+            font-size: 1.65rem;
             font-weight: 700;
             margin: 0;
             display: flex;
@@ -340,12 +358,13 @@ if (!$orders_result) {
             gap: 0.75rem;
             position: relative;
             z-index: 1;
+            letter-spacing: -0.02em;
         }
 
         .header-content p {
-            font-size: 0.95rem;
-            opacity: 0.9;
-            margin: 0.5rem 0 0 0;
+            font-size: 0.9rem;
+            opacity: 0.85;
+            margin: 0.4rem 0 0 0;
             position: relative;
             z-index: 1;
         }
@@ -354,23 +373,24 @@ if (!$orders_result) {
             display: inline-flex;
             align-items: center;
             gap: 0.5rem;
-            padding: 0.875rem 1.5rem;
+            padding: 0.75rem 1.35rem;
             background: white;
-            color: #6366f1;
+            color: #0038A8;
             border: none;
-            border-radius: 12px;
+            border-radius: 10px;
             font-weight: 700;
-            font-size: 0.9rem;
+            font-size: 0.875rem;
             cursor: pointer;
             transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
             position: relative;
             z-index: 1;
         }
 
         .btn-add-new:hover {
             transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+            background: #f0f6ff;
         }
     </style>
     <script>
@@ -605,7 +625,7 @@ if (!$orders_result) {
             <input type="number" name="search_id" placeholder="Search by Order #..." min="1"
                    value="<?php echo $search_id > 0 ? $search_id : ''; ?>"
                    style="padding:0.5rem 1rem;border:1px solid #e2e8f0;border-radius:10px;font-size:0.875rem;width:220px;outline:none;">
-            <button type="submit" style="padding:0.5rem 1rem;border:none;border-radius:10px;background:#6366f1;color:white;font-weight:600;font-size:0.8125rem;cursor:pointer;display:inline-flex;align-items:center;gap:0.375rem;">
+            <button type="submit" style="padding:0.5rem 1rem;border:none;border-radius:10px;background:#0038A8;color:white;font-weight:600;font-size:0.8125rem;cursor:pointer;display:inline-flex;align-items:center;gap:0.375rem;">
                 <i class="fas fa-search"></i> Search
             </button>
             <?php if ($search_id > 0): ?>
@@ -793,7 +813,7 @@ if (!$orders_result) {
                                 <?php for ($i = $start_page; $i <= $end_page; $i++): ?>
                                     <?php if ($i == $page): ?>
                                         <span class="pagination-btn active" 
-                                              style="padding: 0.5rem 0.75rem; border: 1px solid #6366f1; border-radius: 6px; background: #6366f1; color: white; font-size: 0.875rem; font-weight: 500;"><?php echo $i; ?></span>
+                                              style="padding: 0.5rem 0.75rem; border: 1px solid #0038A8; border-radius: 6px; background: #0038A8; color: white; font-size: 0.875rem; font-weight: 500;"><?php echo $i; ?></span>
                                     <?php else: ?>
                                         <a href="?page=<?php echo $i; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo urlencode($status_filter); ?>" 
                                            class="pagination-btn" 
@@ -942,7 +962,7 @@ if (!$orders_result) {
                             <div class="cart-field" style="margin-top: 4px;">
                                 <label style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer;">
                                     <input type="checkbox" id="is_ar" name="is_ar" value="1" style="width: 18px; height: 18px;">
-                                    <i class="fas fa-file-invoice-dollar" style="color: #6366f1; font-size: 1rem;"></i>
+                                    <i class="fas fa-file-invoice-dollar" style="color: #0038A8; font-size: 1rem;"></i>
                                     <strong style="font-size: 0.85rem; color: #0f172a;">Account Receivable</strong>
                                 </label>
                                 <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px; margin-left: 28px;">
@@ -1047,7 +1067,8 @@ if (!$orders_result) {
             'wholesale_price' => floatval($product['wholesale_price'] ?? 0),
             'retail_price' => floatval($product['retail_price'] ?? 0),
             'current_quantity' => floatval($product['current_quantity'] ?? 0),
-            'category_slug' => $product['category_slug'] ?? 'all'
+            'category_slug' => $product['category_slug'] ?? 'all',
+            'image_url' => $product['image_url'] ?? null
         ];
     }
     $json_products = json_encode($clean_products, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);

@@ -115,41 +115,52 @@ function resolveApprovedDamageAdjustmentReason(PDO $conn, ?string $preferredDama
 }
 
 function saveDamagePhotoUpload(int $reportId): ?string {
-    if (empty($_FILES['photo']) || !isset($_FILES['photo']['tmp_name']) || !is_uploaded_file($_FILES['photo']['tmp_name'])) {
+    if (empty($_FILES['photo']) || empty($_FILES['photo']['name'][0])) {
         return null;
     }
-    $f = $_FILES['photo'];
-    if (!empty($f['error']) && $f['error'] !== UPLOAD_ERR_OK) {
-        throw new RuntimeException('Photo upload failed.');
-    }
-    if (($f['size'] ?? 0) > 4 * 1024 * 1024) {
-        throw new RuntimeException('Photo must be 4MB or smaller.');
-    }
-    $mime = null;
-    if (function_exists('finfo_open')) {
-        $fi = finfo_open(FILEINFO_MIME_TYPE);
-        if ($fi) {
-            $mime = finfo_file($fi, $f['tmp_name']);
-            finfo_close($fi);
-        }
-    }
-    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-    if (!$mime || !isset($allowed[$mime])) {
-        throw new RuntimeException('Photo must be JPEG, PNG, or WebP.');
-    }
-    $ext = $allowed[$mime];
     $dir = __DIR__ . '/../uploads/damage_reports';
     if (!is_dir($dir)) {
         if (!mkdir($dir, 0755, true) && !is_dir($dir)) {
             throw new RuntimeException('Cannot create upload directory.');
         }
     }
-    $name = 'ddr_' . $reportId . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
-    $dest = $dir . '/' . $name;
-    if (!move_uploaded_file($f['tmp_name'], $dest)) {
-        throw new RuntimeException('Failed to save photo.');
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
+    $paths = [];
+    $total = count($_FILES['photo']['name']);
+    for ($i = 0; $i < $total; $i++) {
+        if (empty($_FILES['photo']['tmp_name'][$i]) || !is_uploaded_file($_FILES['photo']['tmp_name'][$i])) {
+            continue;
+        }
+        $f = [];
+        foreach (['name', 'tmp_name', 'size', 'error'] as $k) {
+            $f[$k] = $_FILES['photo'][$k][$i];
+        }
+        if (!empty($f['error']) && $f['error'] !== UPLOAD_ERR_OK) {
+            continue;
+        }
+        if (($f['size'] ?? 0) > 4 * 1024 * 1024) {
+            throw new RuntimeException('Each photo must be 4MB or smaller.');
+        }
+        $mime = null;
+        if (function_exists('finfo_open')) {
+            $fi = finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) {
+                $mime = finfo_file($fi, $f['tmp_name']);
+                finfo_close($fi);
+            }
+        }
+        if (!$mime || !isset($allowed[$mime])) {
+            throw new RuntimeException('Photo must be JPEG, PNG, or WebP.');
+        }
+        $ext = $allowed[$mime];
+        $name = 'ddr_' . $reportId . '_' . bin2hex(random_bytes(8)) . '.' . $ext;
+        $dest = $dir . '/' . $name;
+        if (!move_uploaded_file($f['tmp_name'], $dest)) {
+            throw new RuntimeException('Failed to save photo.');
+        }
+        $paths[] = 'uploads/damage_reports/' . $name;
     }
-    return 'uploads/damage_reports/' . $name;
+    return empty($paths) ? null : implode(',', $paths);
 }
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -317,7 +328,7 @@ if ($action === 'submit') {
         $insRev->execute([$reportId]);
 
         $photoPath = null;
-        if (!empty($_FILES['photo']) && is_uploaded_file($_FILES['photo']['tmp_name'] ?? '')) {
+        if (!empty($_FILES['photo']) && !empty($_FILES['photo']['name'][0])) {
             $photoPath = saveDamagePhotoUpload($reportId);
             $up = $conn->prepare('UPDATE delivery_damage_report SET photo_path = ? WHERE report_id = ?');
             $up->execute([$photoPath, $reportId]);

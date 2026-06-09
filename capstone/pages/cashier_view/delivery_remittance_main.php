@@ -1208,8 +1208,10 @@
                             <div style="text-align: left; font-size: 0.9rem; display: flex; flex-direction: column; gap: 0.5rem; color: var(--text-primary);">
                                 <p>Order #${delivery.Order_ID} has been posted as AR.</p>
                                 <p><strong>Sale #${data.sale_id}</strong> recorded for inventory.</p>
+                                ${data.ar_id ? `<p><strong>AR Reference:</strong> AR-${data.ar_id}</p>` : ''}
                                 <p><strong>AR Balance:</strong> ₱${data.ar_balance.toFixed(2)}</p>
                                 ${data.email_sent ? '<p style="color: #059669;"><i class="fas fa-check-circle"></i> Receipt sent to customer email.</p>' : '<p style="color: var(--text-muted);">No email on file — receipt not sent.</p>'}
+                                ${data.ar_notice_sent ? '<p style="color: #059669;"><i class="fas fa-check-circle"></i> AR notice sent to customer email.</p>' : '<p style="color: var(--text-muted);">AR notice email was not sent.</p>'}
                             </div>
                         `,
                         confirmButtonText: 'Done',

@@ -257,8 +257,9 @@ $pending_count = count($pending);
                                         <td>
                                             <div class="action-group">
                                                 <?php if (!empty($row['photo_path'])): ?>
-                                                    <button type="button" onclick="showPhotoModal('<?php echo addslashes('../' . $row['photo_path']); ?>')" class="table-action-btn table-action-btn-label table-action-btn-view">
-                                                        <i data-lucide="image"></i> View
+                                                    <?php $photos = explode(',', (string)$row['photo_path']); ?>
+                                                    <button type="button" onclick="showPhotoModal('<?php echo addslashes('../' . trim($photos[0])); ?>')" class="table-action-btn table-action-btn-label table-action-btn-view">
+                                                        <i data-lucide="image"></i> View<?php if (count($photos) > 1): ?> <span style="font-size:9px;opacity:0.7;">+<?php echo count($photos)-1; ?></span><?php endif; ?>
                                                     </button>
                                                 <?php else: ?>
                                                     <span class="text-slate-300 text-xs italic">No Photo</span>

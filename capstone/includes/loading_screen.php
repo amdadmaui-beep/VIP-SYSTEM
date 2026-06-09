@@ -27,21 +27,12 @@
 .loading-card {
     background: #fff;
     border-radius: 24px;
-    padding: 2.5rem;
+    padding: 2.5rem 2.5rem 2rem;
     max-width: 400px;
     width: 90vw;
     box-shadow: 0 25px 60px rgba(0,0,0,0.3);
     text-align: center;
 }
-.loading-spinner {
-    width: 48px; height: 48px;
-    border: 4px solid #e2e8f0;
-    border-top-color: #6366f1;
-    border-radius: 50%;
-    animation: loadingSpin 0.8s linear infinite;
-    margin: 0 auto 1rem;
-}
-@keyframes loadingSpin { to { transform: rotate(360deg); } }
 .loading-title {
     font-size: 1.15rem; font-weight: 700;
     color: #1e293b; margin: 0 0 0.25rem;
@@ -68,10 +59,108 @@
     margin: 0;
 }
 .loading-step.active { color: #6366f1; font-weight: 600; }
+
+/* ── Truck Animation ── */
+.truck-bounce {
+    animation: truckBounce 2s ease-in-out infinite;
+    display: block;
+    margin: 0 auto 0.75rem;
+}
+@keyframes truckBounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-4px); }
+}
+.cargo-box {
+    transition: opacity 0.6s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    opacity: 0;
+    transform: translateY(12px) scale(0.85);
+}
+.cargo-box.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+.exhaust-puff {
+    animation: puff 1.2s ease-in-out infinite;
+}
+@keyframes puff {
+    0%, 100% { opacity: 0; transform: translateX(0) scale(0.6); }
+    50% { opacity: 0.5; transform: translateX(6px) scale(1); }
+}
+.wheel-spin {
+    transform-origin: center;
+    animation: wheelRotate 2s linear infinite;
+}
+@keyframes wheelRotate {
+    to { transform: rotate(360deg); }
+}
 </style>
 <div id="loadingScreen" role="status" aria-label="Loading page">
     <div class="loading-card">
-        <div class="loading-spinner"></div>
+        <svg viewBox="0 0 240 125" width="260" height="135" xmlns="http://www.w3.org/2000/svg" class="truck-bounce">
+            <ellipse cx="120" cy="118" rx="92" ry="4" fill="rgba(0,0,0,0.06)"/>
+            <rect x="12" y="22" width="142" height="68" rx="6" fill="#eef2ff" stroke="#6366f1" stroke-width="2.5"/>
+            <line x1="12" y1="83" x2="154" y2="83" stroke="#c7d2fe" stroke-width="2"/>
+            <g id="box1" class="cargo-box">
+                <rect x="20" y="49" width="36" height="28" rx="4" fill="#c084fc" stroke="#a855f7" stroke-width="1.2"/>
+                <line x1="38" y1="49" x2="38" y2="77" stroke="#a855f7" stroke-width="1.2" opacity="0.4"/>
+                <line x1="20" y1="63" x2="56" y2="63" stroke="#a855f7" stroke-width="1.2" opacity="0.4"/>
+            </g>
+            <g id="box2" class="cargo-box">
+                <rect x="60" y="49" width="36" height="28" rx="4" fill="#a855f7" stroke="#9333ea" stroke-width="1.2"/>
+                <line x1="78" y1="49" x2="78" y2="77" stroke="#9333ea" stroke-width="1.2" opacity="0.4"/>
+                <line x1="60" y1="63" x2="96" y2="63" stroke="#9333ea" stroke-width="1.2" opacity="0.4"/>
+            </g>
+            <g id="box3" class="cargo-box">
+                <rect x="100" y="49" width="36" height="28" rx="4" fill="#9333ea" stroke="#7c3aed" stroke-width="1.2"/>
+                <line x1="118" y1="49" x2="118" y2="77" stroke="#7c3aed" stroke-width="1.2" opacity="0.4"/>
+                <line x1="100" y1="63" x2="136" y2="63" stroke="#7c3aed" stroke-width="1.2" opacity="0.4"/>
+            </g>
+            <g id="box4" class="cargo-box">
+                <rect x="38" y="25" width="36" height="22" rx="4" fill="#7c3aed" stroke="#6d28d9" stroke-width="1.2"/>
+                <line x1="56" y1="25" x2="56" y2="47" stroke="#6d28d9" stroke-width="1.2" opacity="0.4"/>
+                <line x1="38" y1="35" x2="74" y2="35" stroke="#6d28d9" stroke-width="1.2" opacity="0.4"/>
+            </g>
+            <g id="box5" class="cargo-box">
+                <rect x="78" y="25" width="36" height="22" rx="4" fill="#6d28d9" stroke="#5b21b6" stroke-width="1.2"/>
+                <line x1="96" y1="25" x2="96" y2="47" stroke="#5b21b6" stroke-width="1.2" opacity="0.4"/>
+                <line x1="78" y1="35" x2="114" y2="35" stroke="#5b21b6" stroke-width="1.2" opacity="0.4"/>
+            </g>
+            <path d="M154 42 L163 24 L204 24 L215 42 L215 90 L154 90 Z" fill="#6366f1" stroke="#4f46e5" stroke-width="2.5" stroke-linejoin="round"/>
+            <rect x="167" y="28" width="30" height="3" rx="1.5" fill="#818cf8" opacity="0.4"/>
+            <path d="M159 44 L167 30 L197 30 L206 44 Z" fill="#a5b4fc" stroke="#818cf8" stroke-width="1.5" stroke-linejoin="round" opacity="0.85"/>
+            <line x1="183" y1="30" x2="188" y2="44" stroke="#818cf8" stroke-width="1" opacity="0.5"/>
+            <rect x="207" y="55" width="6" height="8" rx="2" fill="#fde68a"/>
+            <rect x="196" y="60" width="8" height="3" rx="1.5" fill="#818cf8" opacity="0.7"/>
+            <rect x="15" y="86" width="196" height="6" rx="3" fill="#4f46e5"/>
+            <g>
+                <circle cx="62" cy="98" r="15" fill="#1e293b"/>
+                <circle cx="62" cy="98" r="8" fill="#64748b"/>
+                <circle cx="62" cy="98" r="3" fill="#475569"/>
+                <g class="wheel-spin">
+                    <line x1="62" y1="90" x2="62" y2="106" stroke="#475569" stroke-width="2"/>
+                    <line x1="54" y1="98" x2="70" y2="98" stroke="#475569" stroke-width="2"/>
+                    <line x1="56.3" y1="92.3" x2="67.7" y2="103.7" stroke="#475569" stroke-width="1.5"/>
+                    <line x1="56.3" y1="103.7" x2="67.7" y2="92.3" stroke="#475569" stroke-width="1.5"/>
+                </g>
+                <circle cx="177" cy="98" r="15" fill="#1e293b"/>
+                <circle cx="177" cy="98" r="8" fill="#64748b"/>
+                <circle cx="177" cy="98" r="3" fill="#475569"/>
+                <g class="wheel-spin">
+                    <line x1="177" y1="90" x2="177" y2="106" stroke="#475569" stroke-width="2"/>
+                    <line x1="169" y1="98" x2="185" y2="98" stroke="#475569" stroke-width="2"/>
+                    <line x1="171.3" y1="92.3" x2="182.7" y2="103.7" stroke="#475569" stroke-width="1.5"/>
+                    <line x1="171.3" y1="103.7" x2="182.7" y2="92.3" stroke="#475569" stroke-width="1.5"/>
+                </g>
+            </g>
+            <rect x="210" y="76" width="14" height="5" rx="2.5" fill="#64748b"/>
+            <g class="exhaust-puff">
+                <circle cx="227" cy="78" r="4" fill="#cbd5e1"/>
+                <circle cx="235" cy="76" r="3" fill="#e2e8f0"/>
+            </g>
+            <g transform="translate(173, 72)" opacity="0.25">
+                <path d="M0-6 L1.5-2.5 L6-4 L3-0.5 L6 3 L2 2.5 L0 6 L-2 2.5 L-6 3 L-3-0.5 L-6-4 L-1.5-2.5 Z" fill="#e0e7ff"/>
+            </g>
+        </svg>
         <h2 class="loading-title">VIP Villanueva Ice Plant</h2>
         <p class="loading-subtitle">Loading, please wait...</p>
         <div class="loading-bar">
@@ -91,9 +180,22 @@
     var shown = false;
     var finished = false;
 
+    function updateCargoBoxes(pt) {
+        var thresholds = [10, 30, 50, 70, 90];
+        for (var i = 0; i < thresholds.length; i++) {
+            var box = document.getElementById('box' + (i + 1));
+            if (box) {
+                if (pt >= thresholds[i]) {
+                    box.classList.add('visible');
+                }
+            }
+        }
+    }
+
     function setProgress(pt, msg) {
         if (pt > p) { p = pt; }
         lastMsg = msg;
+        updateCargoBoxes(p);
         if (shown) {
             if (bar) bar.style.width = p + '%';
             if (sts) sts.textContent = msg;
@@ -105,6 +207,7 @@
         shown = true;
         el.style.display = 'flex';
         el.offsetHeight;
+        updateCargoBoxes(p);
         if (bar) bar.style.width = p + '%';
         if (sts) sts.textContent = lastMsg;
         el.classList.add('visible');

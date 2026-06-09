@@ -8,6 +8,11 @@ require_once __DIR__ . '/../../includes/csrf.php';
 requireRole([1, 2, 4]);
 
 $show_trashed = isset($_GET['trashed']) && $_GET['trashed'] === '1';
+$sort_order = strtolower(trim((string)($_GET['sort'] ?? 'newest')));
+if (!in_array($sort_order, ['newest', 'oldest'], true)) {
+    $sort_order = 'newest';
+}
+$customer_order_sql = $sort_order === 'oldest' ? 'created_at ASC, Customer_ID ASC' : 'created_at DESC, Customer_ID DESC';
 
 if (isset($_GET['success'])) {
     if ($_GET['success'] == '1') {
@@ -25,7 +30,7 @@ if (isset($_GET['success'])) {
 require_once __DIR__ . '/../../api/users_backend.php';
 
 // Fetch active customers list
-$customers_query = "SELECT Customer_ID, customer_name, phone_number, address, email, credit_limit, aging_days, created_at FROM customers WHERE deleted_at IS NULL ORDER BY created_at DESC";
+$customers_query = "SELECT Customer_ID, customer_name, phone_number, address, email, credit_limit, aging_days, created_at FROM customers WHERE deleted_at IS NULL ORDER BY {$customer_order_sql}";
 $customers_result = $conn->query($customers_query);
 if (!$customers_result) {
     $customers_result = null;
@@ -184,6 +189,59 @@ $trashed_result = $conn->query($trashed_query);
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
+        .customer-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+        .customer-sort-form {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.6rem 0.8rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            background: #ffffff;
+            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
+        }
+        .customer-sort-form label {
+            margin: 0;
+            color: #64748b;
+            font-size: 0.82rem;
+            font-weight: 600;
+        }
+        .customer-sort-form select {
+            min-width: 170px;
+            border: 1px solid #dbe3f0;
+            border-radius: 10px;
+            padding: 0.58rem 2.25rem 0.58rem 0.8rem;
+            font: inherit;
+            color: #0f172a;
+            background: #fff;
+        }
+        #editCustomerModal .modal-content {
+            max-width: 720px;
+        }
+        #editCustomerModal .modal-body {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.5rem;
+        }
+        #editCustomerModal .modal-body .customer-form-grid {
+            display: contents;
+            margin-bottom: 0;
+        }
+        .customer-form-group.full-width {
+            grid-column: 1 / -1;
+        }
+        @media (max-width: 768px) {
+            #editCustomerModal .modal-body {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -312,11 +370,20 @@ $trashed_result = $conn->query($trashed_query);
 
         </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
-            <a href="?<?php echo $show_trashed ? '' : 'trashed=1'; ?>" class="btn-add-new" style="background: <?php echo $show_trashed ? '#6366f1' : '#f59e0b'; ?>; color: white; text-decoration: none;">
+        <div class="customer-toolbar">
+            <a href="?<?php echo $show_trashed ? 'sort=' . urlencode($sort_order) : 'trashed=1&sort=' . urlencode($sort_order); ?>" class="btn-add-new" style="background: <?php echo $show_trashed ? '#6366f1' : '#f59e0b'; ?>; color: white; text-decoration: none;">
                 <i class="fas fa-<?php echo $show_trashed ? 'users' : 'trash-alt'; ?>"></i>
                 <?php echo $show_trashed ? 'View Active Customers' : 'View Trashed (' . $total_trashed . ')'; ?>
             </a>
+            <?php if (!$show_trashed): ?>
+            <form method="GET" class="customer-sort-form">
+                <label for="sort"><i class="fas fa-arrow-down-wide-short"></i> Sort</label>
+                <select name="sort" id="sort" onchange="this.form.submit()">
+                    <option value="newest" <?php echo $sort_order === 'newest' ? 'selected' : ''; ?>>Newest to Oldest</option>
+                    <option value="oldest" <?php echo $sort_order === 'oldest' ? 'selected' : ''; ?>>Oldest to Newest</option>
+                </select>
+            </form>
+            <?php endif; ?>
         </div>
 
             <?php if (isset($success)): ?>
@@ -488,9 +555,6 @@ $trashed_result = $conn->query($trashed_query);
                         <label for="modal_phone_number">Phone Number *</label>
                         <input type="text" id="modal_phone_number" name="phone_number" class="customer-form-input" required placeholder="Enter phone number">
                     </div>
-                </div>
-
-                <div class="customer-form-grid">
                     <div class="customer-form-group">
                         <label for="modal_address">Address</label>
                         <input type="text" id="modal_address" name="address" class="customer-form-input" placeholder="Enter customer address">
@@ -556,23 +620,17 @@ $trashed_result = $conn->query($trashed_query);
                         <label for="edit_phone_number">Phone Number *</label>
                         <input type="text" id="edit_phone_number" name="phone_number" class="customer-form-input" required placeholder="Enter phone number">
                     </div>
-                </div>
 
-                <div class="customer-form-grid">
                     <div class="customer-form-group">
                         <label for="edit_address">Address</label>
                         <input type="text" id="edit_address" name="address" class="customer-form-input" placeholder="Enter customer address">
                     </div>
-                </div>
 
-                <div class="customer-form-grid">
                     <div class="customer-form-group">
                         <label for="edit_email">Email</label>
                         <input type="email" id="edit_email" name="email" class="customer-form-input" placeholder="Enter email address">
                     </div>
-                </div>
 
-                <div class="customer-form-grid">
                     <div class="customer-form-group">
                         <label for="edit_aging_days">Aging Days *</label>
                         <select id="edit_aging_days" name="aging_days" class="customer-form-select" required>

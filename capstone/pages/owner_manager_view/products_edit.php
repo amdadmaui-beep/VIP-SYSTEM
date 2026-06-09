@@ -69,6 +69,10 @@ if (!empty($old_input)) {
     }
 }
 
+// Image upload path helper
+$upload_dir = __DIR__ . '/../../uploads/products/';
+$product_image_url = $product['product_image'] ? '../uploads/products/' . htmlspecialchars($product['product_image']) : null;
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $product_name = trim($_POST['product_name']);
@@ -78,6 +82,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $storage_limit = floatval($_POST['storage_limit'] ?? 0);
     $is_discontinued = isset($_POST['is_discontinued']) ? 1 : 0;
     $description = trim($_POST['description']);
+
+    // Image upload/remove handling
+$remove_image = isset($_POST['remove_image']) ? true : false;
+$product_image = $product['product_image'];
+$pending_image = null;
+
+    if ($remove_image) {
+        // Delete old file
+        if ($product_image && file_exists($upload_dir . $product_image)) {
+            unlink($upload_dir . $product_image);
+        }
+        $product_image = null;
+    }
+
+    if (isset($_FILES['product_image']) && $_FILES['product_image']['error'] === UPLOAD_ERR_OK) {
+        $allowed_types = ['image/jpeg', 'image/png', 'image/webp'];
+        $file_info = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($file_info, $_FILES['product_image']['tmp_name']);
+        finfo_close($file_info);
+
+        if (!in_array($mime_type, $allowed_types)) {
+            $errors[] = "Product image must be JPG, PNG, or WebP.";
+        } elseif ($_FILES['product_image']['size'] > 2 * 1024 * 1024) {
+            $errors[] = "Product image must be 2MB or smaller.";
+        } else {
+            $new_filename = uniqid('prod_') . '.' . pathinfo($_FILES['product_image']['name'], PATHINFO_EXTENSION);
+            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
+            if (move_uploaded_file($_FILES['product_image']['tmp_name'], $upload_dir . $new_filename)) {
+                $pending_image = $new_filename;
+            } else {
+                $errors[] = "Failed to upload product image.";
+            }
+        }
+    }
 
     // Basic validation
     $errors = [];
@@ -104,10 +142,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     if (empty($errors)) {
-        // Update database - form column is no longer edited from UI
-        $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ? WHERE Product_ID = ?";
+        $new_image = $pending_image ? $pending_image : ($remove_image ? null : $product_image);
+        $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
         $update_stmt = $conn->prepare($update_sql);
-        if ($update_stmt->execute([$product_name, $unit_id, $wholesale_price, $retail_price, $is_discontinued, $description, $product_id])) {
+        if ($update_stmt->execute([$product_name, $unit_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id])) {
+            require_once __DIR__ . '/../../includes/product_cache.php';
+            clearProductCache();
+            // Delete old file only after successful DB update
+            if ($pending_image && $product_image && file_exists($upload_dir . $product_image)) {
+                unlink($upload_dir . $product_image);
+            }
+            if ($remove_image && !$pending_image && $product_image && file_exists($upload_dir . $product_image)) {
+                unlink($upload_dir . $product_image);
+            }
             $check_stmt = $conn->prepare("SELECT Inventory_ID FROM stockin_inventory WHERE Product_ID = ? ORDER BY updated_at DESC, Inventory_ID DESC LIMIT 1");
             $check_stmt->execute([$product_id]);
             $inv_row = $check_stmt->fetch(PDO::FETCH_ASSOC);
@@ -125,6 +172,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header("Location: products_edit.php?id=$product_id&success=1");
             exit();
         } else {
+            // Clean up orphaned upload if update fails
+            if ($pending_image && file_exists($upload_dir . $pending_image)) {
+                unlink($upload_dir . $pending_image);
+            }
             $errors[] = "Error updating product.";
         }
     }
@@ -238,8 +289,96 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <!-- Main Content -->
     <main class="main-content">
         <div class="container">
-            <h1>Edit Product</h1>
-            <p>Update the details for the product.</p>
+            <style>
+                .premium-page-banner {
+                    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+                    border-radius: 20px;
+                    padding: 2.5rem 3rem;
+                    color: white;
+                    margin-bottom: 2rem;
+                    box-shadow: 0 15px 30px rgba(99, 102, 241, 0.2);
+                    display: flex;
+                    align-items: center;
+                    gap: 1.5rem;
+                    position: relative;
+                    overflow: hidden;
+                }
+                .premium-page-banner::before {
+                    content: '';
+                    position: absolute;
+                    top: -50%;
+                    right: -10%;
+                    width: 300px;
+                    height: 300px;
+                    background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0) 70%);
+                    border-radius: 50%;
+                    pointer-events: none;
+                }
+                .premium-page-banner::after {
+                    content: '';
+                    position: absolute;
+                    bottom: -30%;
+                    right: 15%;
+                    width: 200px;
+                    height: 200px;
+                    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0) 70%);
+                    border-radius: 50%;
+                    pointer-events: none;
+                }
+                .banner-icon {
+                    background: rgba(255, 255, 255, 0.2);
+                    backdrop-filter: blur(10px);
+                    -webkit-backdrop-filter: blur(10px);
+                    width: 80px;
+                    height: 80px;
+                    border-radius: 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 2.5rem;
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.3);
+                    z-index: 1;
+                }
+                .banner-content {
+                    z-index: 1;
+                }
+                .banner-content h1 {
+                    font-size: 2rem;
+                    font-weight: 800;
+                    margin: 0 0 0.5rem 0;
+                    letter-spacing: -0.5px;
+                }
+                .banner-content p {
+                    font-size: 1.1rem;
+                    opacity: 0.9;
+                    margin: 0;
+                    font-weight: 400;
+                }
+                @media (max-width: 768px) {
+                    .premium-page-banner {
+                        padding: 1.5rem;
+                        flex-direction: column;
+                        text-align: center;
+                    }
+                    .banner-icon {
+                        width: 60px;
+                        height: 60px;
+                        font-size: 1.8rem;
+                    }
+                    .banner-content h1 { font-size: 1.5rem; }
+                    .banner-content p { font-size: 0.95rem; }
+                }
+            </style>
+            <div class="premium-page-banner">
+                <div class="banner-icon">
+                    <i class="fas fa-pen-to-square"></i>
+                </div>
+                <div class="banner-content">
+                    <h1>Edit Product</h1>
+                    <p>Update and manage the details for this product.</p>
+                </div>
+            </div>
 
             <?php if (isset($success)): ?>
                 <script>
@@ -270,72 +409,176 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
             <?php endif; ?>
 
-            <div class="form-container">
-                <form method="POST" class="product-form">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="product_name">
-                                <i class="fas fa-tag"></i> Product Name *
-                            </label>
-                            <input type="text" id="product_name" name="product_name" class="form-input" required value="<?php echo htmlspecialchars($product['product_name']); ?>">
+            <style>
+.product-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 2rem; align-items: start; }
+@media (max-width: 992px) { .product-layout { grid-template-columns: 1fr; } }
+.premium-card { background: #ffffff; border-radius: 20px; padding: 2rem; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04); border: 1px solid rgba(226, 232, 240, 0.8); margin-bottom: 2rem; transition: all 0.3s ease; }
+.premium-card:hover { box-shadow: 0 15px 50px rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.2); }
+.card-header-premium { margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #f1f5f9; }
+.card-header-premium h3 { font-size: 1.25rem; font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 0.75rem; margin: 0; }
+.card-header-premium h3 i { color: #6366f1; background: #eef2ff; padding: 0.5rem; border-radius: 10px; font-size: 1rem; }
+.custom-file-upload { border: 2px dashed #cbd5e1; border-radius: 16px; padding: 2rem; text-align: center; cursor: pointer; transition: all 0.3s ease; background: #f8fafc; position: relative; }
+.custom-file-upload:hover { border-color: #6366f1; background: #f1f5f9; }
+.custom-file-upload i { font-size: 2.5rem; color: #94a3b8; margin-bottom: 1rem; transition: color 0.3s ease; }
+.custom-file-upload:hover i { color: #6366f1; }
+.file-input-hidden { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.image-preview-container { margin-top: 1.5rem; border-radius: 12px; overflow: hidden; position: relative; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+.image-preview-container img { width: 100%; height: auto; display: block; object-fit: cover; }
+.toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 34px; }
+.slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.2); }
+input:checked + .slider { background-color: #6366f1; }
+input:checked + .slider:before { transform: translateX(22px); }
+.status-label { display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: #475569; padding: 0.5rem 0; }
+.price-input-wrapper { position: relative; }
+.price-input-wrapper .currency-symbol { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; font-weight: 600; z-index: 1; }
+.price-input-wrapper input { padding-left: 2.5rem; }
+.btn-action-primary { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; border: none; padding: 1rem; border-radius: 12px; font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3); width: 100%; }
+.btn-action-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4); background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
+.btn-action-secondary { background: white; color: #475569; border: 2px solid #e2e8f0; padding: 1rem; border-radius: 12px; font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; width: 100%; }
+.btn-action-secondary:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; transform: translateY(-2px); }
+
+.current-image-wrapper { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; text-align: center; }
+.current-image-wrapper img { max-width: 150px; max-height: 150px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin: 0 auto; display: block; }
+.remove-image-label { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; margin-top: 1rem; font-size: 0.875rem; color: #ef4444; font-weight: 500; cursor: pointer; background: white; padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #fca5a5; transition: all 0.3s ease; }
+.remove-image-label:hover { background: #fee2e2; }
+</style>
+
+            <form method="POST" class="product-form" enctype="multipart/form-data">
+                <div class="product-layout">
+                    <!-- Main Column -->
+                    <div class="main-column">
+                        <div class="premium-card">
+                            <div class="card-header-premium">
+                                <h3><i class="fas fa-box"></i> Basic Information</h3>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label for="product_name">Product Name *</label>
+                                <input type="text" id="product_name" name="product_name" class="form-input" required value="<?php echo htmlspecialchars($product['product_name']); ?>" placeholder="e.g. Premium Ice Blocks">
+                            </div>
+                            
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label for="unit_id">Unit *</label>
+                                <select id="unit_id" name="unit_id" class="form-input" required>
+                                    <option value="">Select Unit</option>
+                                    <?php foreach ($units as $unit): ?>
+                                        <option value="<?php echo $unit['unit_id']; ?>" <?php echo ($product['unit_id'] == $unit['unit_id']) ? 'selected' : ''; ?>>
+                                            <?php echo htmlspecialchars($unit['unit_name']); ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="description">Description</label>
+                                <textarea id="description" name="description" class="form-input" rows="4" placeholder="Enter detailed product description here..."><?php echo htmlspecialchars($product['description']); ?></textarea>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="unit_id">
-                                <i class="fas fa-weight-hanging"></i> Unit *
-                            </label>
-                            <select id="unit_id" name="unit_id" class="form-input" required>
-                                <option value="">Select Unit</option>
-                                <?php foreach ($units as $unit): ?>
-                                    <option value="<?php echo $unit['unit_id']; ?>" <?php echo ($product['unit_id'] == $unit['unit_id']) ? 'selected' : ''; ?>>
-                                        <?php echo htmlspecialchars($unit['unit_name']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="wholesale_price">
-                                <i class="fas fa-dollar-sign"></i> Wholesale Price *
-                            </label>
-                            <input type="number" id="wholesale_price" name="wholesale_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['wholesale_price']); ?>">
-                        </div>
-                        <div class="form-group">
-                            <label for="retail_price">
-                                <i class="fas fa-dollar-sign"></i> Retail Price *
-                            </label>
-                            <input type="number" id="retail_price" name="retail_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['retail_price']); ?>">
-                        </div>
-                        <div class="form-group">
-                            <label for="storage_limit">
-                                <i class="fas fa-warehouse"></i> Storage Limit *
-                            </label>
-                            <input type="number" id="storage_limit" name="storage_limit" class="form-input" step="1" min="1" required value="<?php echo htmlspecialchars((string)$storage_limit); ?>">
-                        </div>
-                        <div class="form-group full-width">
-                            <label for="description">
-                                <i class="fas fa-file-alt"></i> Description
-                            </label>
-                            <textarea id="description" name="description" class="form-input" rows="4"><?php echo htmlspecialchars($product['description']); ?></textarea>
+
+                        <div class="premium-card">
+                            <div class="card-header-premium">
+                                <h3><i class="fas fa-tags"></i> Pricing & Storage</h3>
+                            </div>
+                            <div class="form-grid" style="margin-bottom: 1.5rem;">
+                                <div class="form-group">
+                                    <label for="wholesale_price">Wholesale Price *</label>
+                                    <div class="price-input-wrapper">
+                                        <span class="currency-symbol">?</span>
+                                        <input type="number" id="wholesale_price" name="wholesale_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['wholesale_price']); ?>">
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="retail_price">Retail Price *</label>
+                                    <div class="price-input-wrapper">
+                                        <span class="currency-symbol">?</span>
+                                        <input type="number" id="retail_price" name="retail_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['retail_price']); ?>">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="storage_limit">Storage Limit *</label>
+                                <input type="number" id="storage_limit" name="storage_limit" class="form-input" step="1" min="1" required value="<?php echo htmlspecialchars((string)$storage_limit); ?>">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="form-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="is_discontinued" name="is_discontinued" value="1" <?php echo $product['is_discontinued'] ? 'checked' : ''; ?>>
-                            <span class="checkmark"></span>
-                            Is Discontinued
-                        </label>
-                    </div>
+                    <!-- Sidebar Column -->
+                    <div class="sidebar-column">
+                        <div class="premium-card">
+                            <div class="card-header-premium">
+                                <h3><i class="fas fa-image"></i> Product Image</h3>
+                            </div>
+                            
+                            <?php if ($product_image_url): ?>
+                                <div class="current-image-wrapper">
+                                    <img src="<?php echo $product_image_url; ?>" alt="Current product image">
+                                    <label class="remove-image-label">
+                                        <input type="checkbox" name="remove_image" value="1">
+                                        <span>Remove current image</span>
+                                    </label>
+                                </div>
+                            <?php endif; ?>
+                            
+                            <div class="custom-file-upload">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p style="font-weight: 600; color: #1e293b; margin-bottom: 0.5rem;"><?php echo $product_image_url ? 'Replace Image' : 'Click to upload'; ?></p>
+                                <p style="font-size: 0.8rem; color: #64748b;">JPG, PNG, or WebP (max. 2MB)</p>
+                                <input type="file" id="product_image" name="product_image" class="file-input-hidden" accept="image/jpeg,image/png,image/webp" onchange="previewImage(this)">
+                            </div>
+                            <div id="imagePreview" class="image-preview-container" style="display: none;">
+                                <img id="preview" src="#" alt="Preview">
+                                <button type="button" onclick="clearImage()" style="position: absolute; top: 0.5rem; right: 0.5rem; background: rgba(255,255,255,0.9); border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; color: #ef4444; box-shadow: 0 2px 5px rgba(0,0,0,0.2);"><i class="fas fa-times"></i></button>
+                            </div>
+                        </div>
 
-                    <div class="form-actions">
-                        <button type="submit" class="btn-primary">
-                            <i class="fas fa-save"></i> Update Product
-                        </button>
-                        <a href="inventory.php" class="btn-secondary">
-                            <i class="fas fa-arrow-left"></i> Back to Inventory
-                        </a>
+                        <div class="premium-card">
+                            <div class="card-header-premium">
+                                <h3><i class="fas fa-cog"></i> Settings</h3>
+                            </div>
+                            <div class="status-label">
+                                <span>
+                                    <span style="display: block; font-size: 0.95rem; color: #1e293b;">Discontinued</span>
+                                    <span style="font-size: 0.8rem; color: #64748b; font-weight: 400;">No longer available for sale</span>
+                                </span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="is_discontinued" name="is_discontinued" value="1" <?php echo $product['is_discontinued'] ? 'checked' : ''; ?>>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; flex-direction: column; gap: 1rem;">
+                            <button type="submit" class="btn-action-primary">
+                                <i class="fas fa-save"></i> Update Product
+                            </button>
+                            <a href="inventory.php" class="btn-action-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Inventory
+                            </a>
+                        </div>
                     </div>
-                </form>
-            </div>
+                </div>
+            </form>
+            
+            <script>
+            function previewImage(input) {
+                if (input.files && input.files[0]) {
+                    var reader = new FileReader();
+                    reader.onload = function(e) {
+                        document.getElementById('preview').src = e.target.result;
+                        document.getElementById('imagePreview').style.display = 'block';
+                    }
+                    reader.readAsDataURL(input.files[0]);
+                }
+            }
+
+            function clearImage() {
+                document.getElementById('product_image').value = '';
+                document.getElementById('imagePreview').style.display = 'none';
+                document.getElementById('preview').src = '#';
+            }
+            </script>
         </div>
     </main>
 </div>
@@ -343,3 +586,5 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="../assets/js/script.js"></script>
 </body>
 </html>
+
+

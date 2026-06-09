@@ -37,8 +37,11 @@ $cspDirectives = [
 $csp = implode('; ', $cspDirectives);
 header("Content-Security-Policy: $csp");
 
-// ── HSTS (only meaningful over HTTPS) ─────────────────────────────────────────
-header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+// ── HSTS (only meaningful over HTTPS; skip localhost to avoid browser lockout) ──
+$host = strtolower((string)($_SERVER['HTTP_HOST'] ?? ''));
+if ($host !== 'localhost' && strpos($host, '127.0.0.1') !== 0 && strpos($host, '::1') !== 0) {
+    header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
 
 // ── Other Security Headers ────────────────────────────────────────────────────
 

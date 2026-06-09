@@ -3,17 +3,18 @@
     <!-- Sticky Header -->
     <header class="glass-header sticky top-0 z-40 px-5 pt-6 pb-4 border-b border-slate-100 shadow-sm">
         <?php
-        $navTab = 'inventory';
+        $navTab = 'dashboard';
         if (isset($_GET['tab'])) {
-            if ($_GET['tab'] === 'history') $navTab = 'history';
+            if ($_GET['tab'] === 'inventory') $navTab = 'inventory';
             if ($_GET['tab'] === 'dashboard') $navTab = 'dashboard';
+            if ($_GET['tab'] === 'history') $navTab = 'history';
         }
         $INV_CHROME = [
             'display_name' => $display_name,
             'display_role' => $display_role,
             'session_label' => 'Inventory Session',
             'nav_active' => $navTab,
-            'inventory_href' => 'inventory_staff.php',
+            'inventory_href' => 'inventory_staff.php?tab=inventory',
             'dashboard_href' => 'inventory_staff.php?tab=dashboard',
             'history_href' => 'inventory_staff.php?tab=history',
             'history_nav_id' => 'invNavHistory',

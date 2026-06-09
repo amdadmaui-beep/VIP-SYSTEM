@@ -1,10 +1,10 @@
 
 <!-- Delivery Detail Modal -->
 <div class="modal fade" id="detailModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down">
-        <div class="modal-content rounded-[24px] border-0 shadow-2xl overflow-hidden">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+        <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">
-                <h5 class="modal-title font-bold text-dark flex items-center gap-3" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                <h5 class="modal-title font-bold text-dark flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500">
                         <i class="fas fa-truck-ramp-box"></i>
                     </div>
@@ -106,9 +106,9 @@
 <!-- COD Confirmation Modal -->
 <div class="modal fade" id="codModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content rounded-[24px] border-0 shadow-2xl overflow-hidden">
+        <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">
-                <h5 class="modal-title font-bold text-dark flex items-center gap-3" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                <h5 class="modal-title font-bold text-dark flex items-center gap-3">
                     <div class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-500">
                         <i class="fas fa-hand-holding-dollar"></i>
                     </div>
@@ -119,7 +119,7 @@
             <div class="modal-body px-6 pt-4 pb-6 text-center">
                 <div class="bg-emerald-50/50 rounded-[24px] p-6 border border-emerald-100/50 mb-4">
                     <p class="text-emerald-600/70 text-[11px] font-black uppercase tracking-widest mb-2">Total Amount to Collect</p>
-                    <div class="text-4xl font-black text-emerald-600 tracking-tight" id="codAmount" style="font-family: 'Plus Jakarta Sans', sans-serif;">₱0.00</div>
+                    <div class="text-4xl font-black text-emerald-600 tracking-tight" id="codAmount">₱0.00</div>
                 </div>
                 <p class="text-slate-500 text-sm font-medium">Please confirm that you have received this exact amount in cash from the customer.</p>
             </div>
@@ -182,11 +182,11 @@
 </div>
 
 <!-- View Only Delivery Details Modal -->
-<div class="modal fade" id="viewOnlyModal" tabindex="-1">
+<div class="modal fade" id="viewOnlyModal" tabindex="-1" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-scrollable modal-dialog-centered">
-        <div class="modal-content border-0 rounded-[24px] shadow-2xl overflow-hidden">
+        <div class="modal-content border-0 rounded-[24px]">
             <div class="modal-header border-b border-light bg-light/50 px-5 py-4">
-                <h5 class="modal-title font-bold text-dark flex items-center gap-2" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                <h5 class="modal-title font-bold text-dark flex items-center gap-2">
                     <i data-lucide="info" class="w-5 h-5 text-indigo-500"></i> Delivery Details
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -211,7 +211,7 @@
                 <div class="d-flex justify-content-between align-items-center bg-emerald-50 rounded-[16px] p-4 mb-4 border border-emerald-100/50">
                     <div>
                         <span class="d-block small text-emerald-600 font-semibold mb-1 uppercase tracking-wider">Total Amount</span>
-                        <span id="voTotalAmount" class="font-black text-2xl text-emerald-700" style="font-family: 'Plus Jakarta Sans', sans-serif;">₱0.00</span>
+                        <span id="voTotalAmount" class="font-black text-2xl text-emerald-700">₱0.00</span>
                     </div>
                     <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-emerald-500 shadow-sm shadow-emerald-500/10">
                         <i data-lucide="banknote" class="w-6 h-6"></i>
@@ -238,11 +238,11 @@
 </div>
 
 <!-- History Detail Modal -->
-<div class="modal fade" id="collectionDetailModal" tabindex="-1">
+<div class="modal fade" id="collectionDetailModal" tabindex="-1" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 rounded-[24px] shadow-2xl overflow-hidden">
-            <div class="modal-header border-b border-light bg-light/50 px-5 py-4">
-                <h5 class="modal-title font-bold text-dark flex items-center gap-2" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+        <div class="modal-content border-0 rounded-[24px]" style="box-shadow: none !important;">
+            <div class="modal-header border-0 px-5 py-4">
+                <h5 class="modal-title font-bold text-dark flex items-center gap-2">
                     <i data-lucide="receipt" class="w-5 h-5 text-violet-500"></i> History Record <span id="cdDeliveryId" class="text-muted text-sm font-normal ml-2"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -271,7 +271,7 @@
 
                 <div class="bg-gray-50 rounded-[16px] p-4 border border-gray-100 text-center">
                     <label class="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1 block">Amount Paid/Collected</label>
-                    <span id="cdAmount" class="font-black text-3xl text-dark" style="font-family: 'Plus Jakarta Sans', sans-serif;">₱0.00</span>
+                    <span id="cdAmount" class="font-black text-3xl text-dark">₱0.00</span>
                 </div>
 
             </div>
@@ -293,9 +293,9 @@
 <?php if (!empty($has_delivery_damage_reports)): ?>
 <div class="modal fade" id="damageReportModal" tabindex="-1" aria-labelledby="damageReportModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content rounded-[24px] border-0 shadow-2xl overflow-hidden">
+        <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">
-                <h5 class="modal-title font-bold text-dark flex items-center gap-3" id="damageReportModalLabel" style="font-family: 'Plus Jakarta Sans', sans-serif;">
+                <h5 class="modal-title font-bold text-dark flex items-center gap-3" id="damageReportModalLabel">
                     <div class="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500">
                         <i class="fas fa-exclamation-triangle"></i>
                     </div>
@@ -330,7 +330,8 @@
                         <label class="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 block flex items-center gap-2">
                             <i class="fas fa-camera text-slate-400"></i> Photo Evidence (optional)
                         </label>
-                        <input type="file" class="form-control form-control-sm rounded-lg border-slate-200 bg-white" id="ddr_photo" accept="image/jpeg,image/png,image/webp" onchange="previewDamagePhoto(this)">
+                        <input type="file" class="form-control form-control-sm rounded-lg border-slate-200 bg-white" id="ddr_photo" accept="image/jpeg,image/png,image/webp" multiple onchange="previewDamagePhoto(this)">
+                        <div class="text-[10px] text-slate-400 mt-1.5 font-medium">You can select multiple photos</div>
                         <div id="ddr_photo_preview_wrap" class="mt-3 hidden">
                             <div class="relative inline-block w-full">
                                 <img id="ddr_photo_preview" src="" alt="Preview" class="w-full h-40 object-cover rounded-[16px] shadow-sm border border-slate-200">

@@ -2,9 +2,9 @@
 header("Cache-Control: no-cache, no-store, must-revalidate");
 header("Pragma: no-cache");
 header("Expires: 0");
-session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/roles_helper.php';
 require_once __DIR__ . '/../../includes/order_cancellation_helper.php';
 require_once __DIR__ . '/../../includes/rider_availability_helper.php';
@@ -33,8 +33,8 @@ $now_time = substr($today_row['now'], 0, 5); // HH:MM format
 $customers_query = "SELECT Customer_ID, customer_name, phone_number, address FROM customers WHERE deleted_at IS NULL ORDER BY customer_name";
 $customers_result = $conn->query($customers_query);
 
-// Fetch product categories
-$categories_query = "SELECT category_name, slug FROM product_categories ORDER BY category_id";
+// Fetch product categories (exclude soft-deleted)
+$categories_query = "SELECT category_id, category_name FROM product_categories WHERE deleted_at IS NULL ORDER BY category_id";
 $categories_result = $conn->query($categories_query);
 $product_categories = [];
 while ($cat = $categories_result->fetch(PDO::FETCH_ASSOC)) {
@@ -42,17 +42,23 @@ while ($cat = $categories_result->fetch(PDO::FETCH_ASSOC)) {
 }
 
 // Fetch products for order items
-$products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.wholesale_price, p.retail_price, p.image_url, c.slug as category_slug
-    FROM products p 
-    LEFT JOIN units u ON p.unit_id = u.unit_id 
-    LEFT JOIN product_categories c ON p.category_id = c.category_id
-    WHERE p.is_discontinued = 0 
-    ORDER BY u.unit_name, p.product_name";
-$products_result = $conn->query($products_query);
 $products_data = [];
-while ($product = $products_result->fetch(PDO::FETCH_ASSOC)) {
-    $product['current_quantity'] = getAvailableStock($conn, (int)$product['Product_ID']);
-    $products_data[] = $product;
+try {
+    $products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.wholesale_price, p.retail_price,
+        p.product_image AS image_url, p.category_id
+        FROM products p
+        LEFT JOIN units u ON p.unit_id = u.unit_id
+        WHERE p.is_discontinued = 0
+        ORDER BY u.unit_name, p.product_name";
+    $products_result = $conn->query($products_query);
+    if ($products_result) {
+        while ($product = $products_result->fetch(PDO::FETCH_ASSOC)) {
+            $product['current_quantity'] = getAvailableStock($conn, (int)$product['Product_ID']);
+            $products_data[] = $product;
+        }
+    }
+} catch (Throwable $e) {
+    error_log('orders.php products query: ' . $e->getMessage());
 }
 
 // Fetch riders for Delivery Person dropdown
@@ -80,9 +86,22 @@ $order_sort_expr = !empty($orders_col['created_at']) ? 'COALESCE(o.created_at, o
 
 // Detect whether delivery.schedule_date exists (schema drift workaround)
 $deliveryDateCol = 'o.delivery_date';
+$hasDeliveryScheduleDate = false;
 $schColCheck = $conn->query("SHOW COLUMNS FROM delivery LIKE 'schedule_date'");
 if ($schColCheck && $schColCheck->fetch()) {
+    $hasDeliveryScheduleDate = true;
     $deliveryDateCol = 'd.schedule_date';
+}
+$deliveryDateSelect = $deliveryDateCol;
+if ($hasDeliveryScheduleDate && !empty($orders_col['delivery_date'])) {
+    $deliveryDateSelect = "COALESCE(NULLIF(d.schedule_date, '0000-00-00'), o.delivery_date)";
+}
+
+$riderIdSelect = 'NULL AS assigned_rider_user_id';
+if (riderWorkflowHasColumn($conn, 'delivery', 'assigned_rider_id')) {
+    $riderIdSelect = 'd.assigned_rider_id AS assigned_rider_user_id';
+} elseif (riderWorkflowHasColumn($conn, 'delivery', 'delivered_by_user_id')) {
+    $riderIdSelect = 'd.delivered_by_user_id AS assigned_rider_user_id';
 }
 
 // Fetch orders with filters
@@ -192,12 +211,13 @@ $orders_query = "SELECT
     {$order_created_expr} as created_at,
     COALESCE({$addr_o_expr}, NULLIF(TRIM(d.delivery_address), ''), c.address) AS list_delivery_address,
     d.Delivery_ID,
-    $deliveryDateCol as delivery_date,
+    {$deliveryDateSelect} as delivery_date,
     d.delivery_status,
     COALESCE(o.customer_name_snapshot, c.customer_name) as customer_name,
     COALESCE(o.customer_phone_snapshot, c.phone_number) as phone_number,
     COALESCE(o.customer_address_snapshot, c.address) as customer_address,
-    d.delivered_by as delivery_person_name
+    d.delivered_by as delivery_person_name,
+    {$riderIdSelect}
 FROM orders o
 INNER JOIN customers c ON o.Customer_ID = c.Customer_ID
 LEFT JOIN delivery d ON o.Order_ID = d.Order_ID
@@ -250,8 +270,8 @@ if (!$orders_result) {
             margin-bottom: 1.5rem;
         }
 
-        .stat-card {
-            background: white;
+        .stats-grid .stat-card {
+            background: #ffffff;
             border-radius: 16px;
             padding: 1.25rem;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
@@ -263,20 +283,32 @@ if (!$orders_result) {
             cursor: pointer;
             text-decoration: none;
             color: inherit;
+            position: relative;
+            overflow: hidden;
         }
 
-        .stat-card:hover {
+        .stats-grid .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #7350F5, #8b6cf7, #6242E0);
+        }
+
+        .stats-grid .stat-card:hover {
             transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(0, 56, 168, 0.12);
-            border-color: #c7d7f5;
+            box-shadow: 0 8px 25px rgba(115, 80, 245, 0.15);
+            border-color: #c4b5fd;
         }
 
-        .stat-card.active {
-            border-color: #0038A8;
-            box-shadow: 0 4px 15px rgba(0, 56, 168, 0.18);
+        .stats-grid .stat-card.active {
+            border-color: #7350F5;
+            box-shadow: 0 4px 15px rgba(115, 80, 245, 0.22);
         }
 
-        .stat-icon {
+        .stats-grid .stat-icon {
             width: 48px;
             height: 48px;
             border-radius: 12px;
@@ -284,15 +316,40 @@ if (!$orders_result) {
             align-items: center;
             justify-content: center;
             font-size: 1.25rem;
+            flex-shrink: 0;
         }
 
-        .stat-icon.all { background: linear-gradient(135deg, #0038A8 0%, #002b80 100%); color: white; }
-        .stat-icon.pending { background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%); color: #b45309; }
-        .stat-icon.scheduled { background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%); color: #0038A8; }
-        .stat-icon.completed { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); color: #15803d; }
-        .stat-icon.cancelled { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); color: #CE1126; }
+        .stats-grid .stat-icon.all {
+            background: linear-gradient(135deg, #7350F5 0%, #6242E0 100%);
+            color: #ffffff;
+        }
 
-        .stat-content h4 {
+        .stats-grid .stat-icon.pending {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            color: #b45309;
+        }
+
+        .stats-grid .stat-icon.scheduled {
+            background: linear-gradient(135deg, #dbeafe 0%, #bfdbfe 100%);
+            color: #1d4ed8;
+        }
+
+        .stats-grid .stat-icon.completed {
+            background: linear-gradient(135deg, #e0e7ff 0%, #c7d2fe 100%);
+            color: #4338ca;
+        }
+
+        .stats-grid .stat-icon.cancelled {
+            background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%);
+            color: #b91c1c;
+        }
+
+        .stats-grid .stat-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .stats-grid .stat-content h4 {
             font-size: 0.75rem;
             font-weight: 600;
             color: #64748b;
@@ -301,26 +358,83 @@ if (!$orders_result) {
             letter-spacing: 0.5px;
         }
 
-        .stat-content p {
+        .stats-grid .stat-content p {
             font-size: 1.5rem;
             font-weight: 800;
             color: #1e293b;
             margin: 0;
         }
 
-        /* eGov.ph Header Banner */
+        .orders-search-form {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .orders-search-input {
+            padding: 0.5rem 1rem;
+            border: 2px solid #c4b5fd;
+            border-radius: 10px;
+            font-size: 0.875rem;
+            width: 220px;
+            outline: none;
+            background: #faf8ff;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .orders-search-input:focus {
+            border-color: #7350F5;
+            box-shadow: 0 0 0 3px rgba(115, 80, 245, 0.2);
+            background: #ffffff;
+        }
+
+        .orders-search-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 10px;
+            background: #7350F5;
+            color: #ffffff;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .orders-search-btn:hover {
+            background: #6242E0;
+            transform: translateY(-1px);
+        }
+
+        .orders-search-clear {
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #7350F5;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+        }
+
+        /* Header Banner — brand accent */
         .page-header-banner {
-            background: linear-gradient(135deg, #0038A8 0%, #002b80 100%);
-            border-radius: 20px;
-            padding: 1.75rem 2rem;
-            color: white;
+            background: #7350F5;
+            border-radius: 24px;
+            padding: 2rem;
+            color: #ffffff;
             margin-bottom: 1.5rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
             flex-wrap: wrap;
             gap: 1rem;
-            box-shadow: 0 20px 40px rgba(0, 56, 168, 0.25);
+            box-shadow: 0 20px 40px rgba(115, 80, 245, 0.28);
             position: relative;
             overflow: hidden;
         }
@@ -393,9 +507,7 @@ if (!$orders_result) {
             background: #f0f6ff;
         }
     </style>
-    <script>
-        window.csrfToken = '<?php echo getCsrfToken(); ?>';
-    </script>
+    <?php echo csrfBootstrapTags(); ?>
 </head>
 <body>
 <div class="dashboard-wrapper">
@@ -619,17 +731,16 @@ if (!$orders_result) {
         <?php endif; ?>
 
         <!-- Search by Order ID -->
-        <form method="GET" style="display:flex;gap:0.75rem;margin-bottom:1.25rem;align-items:center;">
+        <form method="GET" class="orders-search-form">
             <input type="hidden" name="status" value="<?php echo htmlspecialchars($status_filter); ?>">
             <input type="hidden" name="page" value="1">
-            <input type="number" name="search_id" placeholder="Search by Order #..." min="1"
-                   value="<?php echo $search_id > 0 ? $search_id : ''; ?>"
-                   style="padding:0.5rem 1rem;border:1px solid #e2e8f0;border-radius:10px;font-size:0.875rem;width:220px;outline:none;">
-            <button type="submit" style="padding:0.5rem 1rem;border:none;border-radius:10px;background:#0038A8;color:white;font-weight:600;font-size:0.8125rem;cursor:pointer;display:inline-flex;align-items:center;gap:0.375rem;">
+            <input type="number" name="search_id" class="orders-search-input" placeholder="Search by Order #..." min="1"
+                   value="<?php echo $search_id > 0 ? $search_id : ''; ?>">
+            <button type="submit" class="orders-search-btn">
                 <i class="fas fa-search"></i> Search
             </button>
             <?php if ($search_id > 0): ?>
-                <a href="?status=<?php echo urlencode($status_filter); ?>" style="padding:0.5rem 1rem;border-radius:10px;font-size:0.8125rem;font-weight:600;color:#64748b;text-decoration:none;display:inline-flex;align-items:center;gap:0.375rem;">
+                <a href="?status=<?php echo urlencode($status_filter); ?>" class="orders-search-clear">
                     <i class="fas fa-times"></i> Clear
                 </a>
             <?php endif; ?>
@@ -744,16 +855,25 @@ if (!$orders_result) {
                                                         $is_schedule_ready = in_array($status_lower, ['pending', 'requested', 'confirmed'], true);
                                                         $is_scheduled = ($status_lower === 'scheduled for delivery');
                                                         $is_delivered = in_array($status_lower, ['delivered (pending cash turnover)', 'delivered'], true);
-                                                        $can_reorder = ($is_delivered || $is_completed);
                                                         ?>
                                                         <?php if (!$is_completed && !$is_cancelled): ?>
                                                             <button type="button" title="Edit Order" data-order-id="<?php echo intval($order['Order_ID']); ?>" onclick="openEditOrder(<?php echo intval($order['Order_ID']); ?>)" class="table-action-btn table-action-btn-edit" <?php echo !$is_schedule_ready ? 'disabled' : ''; ?>>
                                                                 <i class="fas fa-pen"></i>
                                                             </button>
-                                                            <button type="button" title="<?php echo !$can_reorder ? 'Reorder only available for completed or delivered orders' : 'Reorder same items'; ?>" data-order-id="<?php echo intval($order['Order_ID']); ?>" onclick="reorderOrder(<?php echo intval($order['Order_ID']); ?>)" class="table-action-btn table-action-btn-reorder" <?php echo !$can_reorder ? 'disabled' : ''; ?>>
-                                                                <i class="fas fa-rotate-right"></i>
-                                                            </button>
-                                                            <button title="Mark as Scheduled for Delivery" type="button" data-order-id="<?php echo intval($order['Order_ID']); ?>" class="table-action-btn table-action-btn-label table-action-btn-schedule mark-scheduled-btn" <?php echo !$is_schedule_ready ? 'disabled' : ''; ?>>
+                                                            <?php
+                                                            $schedule_date_raw = '';
+                                                            if (!empty($order['delivery_date']) && strtotime((string)$order['delivery_date']) !== false) {
+                                                                $schedule_date_raw = date('Y-m-d', strtotime((string)$order['delivery_date']));
+                                                            }
+                                                            $schedule_rider_id = (int)($order['assigned_rider_user_id'] ?? 0);
+                                                            ?>
+                                                            <button title="Mark as Scheduled for Delivery" type="button"
+                                                                data-order-id="<?php echo intval($order['Order_ID']); ?>"
+                                                                data-delivery-date="<?php echo htmlspecialchars($schedule_date_raw, ENT_QUOTES, 'UTF-8'); ?>"
+                                                                data-rider-id="<?php echo $schedule_rider_id; ?>"
+                                                                data-rider-name="<?php echo htmlspecialchars((string)($order['delivery_person_name'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                                data-notes="<?php echo htmlspecialchars((string)($order['remarks'] ?? ''), ENT_QUOTES, 'UTF-8'); ?>"
+                                                                class="table-action-btn table-action-btn-label table-action-btn-schedule mark-scheduled-btn" <?php echo !$is_schedule_ready ? 'disabled' : ''; ?>>
                                                                 <i class="fas fa-check-square"></i> Scheduled
                                                             </button>
                                                         <?php endif; ?>
@@ -892,8 +1012,12 @@ if (!$orders_result) {
                         <input type="text" id="catalogSearchInput" placeholder="Search products..." oninput="filterCatalog()">
                     </div>
                     <div class="catalog-filters">
-                        <?php foreach ($product_categories as $index => $cat): ?>
-                            <button type="button" class="catalog-filter-tab <?php echo $index === 0 ? 'active' : ''; ?>" data-category="<?php echo htmlspecialchars($cat['slug']); ?>" onclick="setCatalogFilter('<?php echo htmlspecialchars($cat['slug']); ?>', this)">
+                        <button type="button" class="catalog-filter-tab active" data-category-id="0" onclick="setCatalogFilter(0, this)">
+                            <i class="fas fa-th-large"></i> All Items
+                        </button>
+                        <?php foreach ($product_categories as $cat): ?>
+                            <?php if (intval($cat['category_id']) === 1) continue; ?>
+                            <button type="button" class="catalog-filter-tab" data-category-id="<?php echo intval($cat['category_id']); ?>" onclick="setCatalogFilter(<?php echo intval($cat['category_id']); ?>, this)">
                                 <?php echo htmlspecialchars($cat['category_name']); ?>
                             </button>
                         <?php endforeach; ?>
@@ -996,9 +1120,6 @@ if (!$orders_result) {
                         <button type="button" onclick="closeCreateOrderModal()" class="btn-cancel-pos" title="Cancel Order">
                             <i class="fas fa-times"></i> Cancel
                         </button>
-                        <button type="button" onclick="showReceiptPreview()" class="btn-receipt-preview" title="View Receipt">
-                            <i class="fas fa-file-invoice"></i> Receipt
-                        </button>
                         <button type="submit" id="submitOrderBtn" class="btn btn-primary pos-confirm-btn">
                             <i class="fas fa-save"></i> Save Order
                         </button>
@@ -1047,6 +1168,7 @@ if (!$orders_result) {
     </div>
 </div>
 
+<script>window.ORDERS_PRODUCT_IMAGE_BASE = '../uploads/products/';</script>
 <script src="../assets/js/script.js?v=<?php echo time(); ?>"></script>
 <script src="../assets/js/orders.js?v=<?php echo time(); ?>"></script>
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" integrity="sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj" crossorigin="anonymous"></script>
@@ -1067,7 +1189,7 @@ if (!$orders_result) {
             'wholesale_price' => floatval($product['wholesale_price'] ?? 0),
             'retail_price' => floatval($product['retail_price'] ?? 0),
             'current_quantity' => floatval($product['current_quantity'] ?? 0),
-            'category_slug' => $product['category_slug'] ?? 'all',
+            'category_id' => intval($product['category_id'] ?? 0),
             'image_url' => $product['image_url'] ?? null
         ];
     }

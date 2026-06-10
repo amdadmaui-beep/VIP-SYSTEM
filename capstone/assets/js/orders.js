@@ -6,8 +6,58 @@ if (window.__ordersJsLoaded) {
     window.__ordersJsLoaded = true;
 
     let orderCart = [];
-    let currentCategoryFilter = 'all';
+    let currentCategoryFilter = 0;
     let editingOrderId = null;
+
+function getPageCsrfToken() {
+    if (typeof window.csrfToken === 'string' && window.csrfToken) {
+        return window.csrfToken;
+    }
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) {
+        window.csrfToken = meta.content;
+        return meta.content;
+    }
+    const input = document.querySelector('input[name="csrf_token"]');
+    if (input && input.value) {
+        window.csrfToken = input.value;
+        return input.value;
+    }
+    return '';
+}
+
+function getOrdersFormAction() {
+    const parts = (window.location.pathname || '').split('/');
+    const page = parts[parts.length - 1] || 'orders.php';
+    return page;
+}
+
+function applyPageCsrfToken(token) {
+    if (!token || typeof token !== 'string') return;
+    window.csrfToken = token;
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) meta.setAttribute('content', token);
+    document.querySelectorAll('input[name="csrf_token"]').forEach((input) => {
+        input.value = token;
+    });
+}
+
+function appendCsrfField(form) {
+    const token = getPageCsrfToken();
+    if (!token) return;
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrf_token';
+    csrfInput.value = token;
+    form.appendChild(csrfInput);
+}
+
+function getProductImageUrl(filename) {
+    if (!filename || String(filename).trim() === '') return '';
+    const base = (window.ORDERS_PRODUCT_IMAGE_BASE || '../uploads/products/').replace(/\/?$/, '/');
+    const clean = String(filename).replace(/^\/+/, '').replace(/^uploads\/products\//, '');
+    return base + encodeURIComponent(clean).replace(/%2F/g, '/');
+}
 
 // Initialize listeners on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -125,7 +175,12 @@ document.addEventListener('DOMContentLoaded', function() {
         button.addEventListener('click', () => {
             const orderId = parseInt(button.dataset.orderId || '0', 10);
             if (!orderId) return;
-            promptAndScheduleOrder(orderId);
+            promptAndScheduleOrder(orderId, {
+                deliveryDate: button.dataset.deliveryDate || '',
+                riderId: button.dataset.riderId || '',
+                riderName: button.dataset.riderName || '',
+                notes: button.dataset.notes || ''
+            });
         });
     });
 
@@ -149,7 +204,7 @@ document.addEventListener('DOMContentLoaded', function() {
 function submitOrderStatusUpdate(orderId, newStatus, extraFields = {}) {
     const form = document.createElement('form');
     form.method = 'POST';
-    form.action = '../api/orders_backend.php';
+    form.action = getOrdersFormAction();
 
     const actionInput = document.createElement('input');
     actionInput.type = 'hidden';
@@ -157,13 +212,7 @@ function submitOrderStatusUpdate(orderId, newStatus, extraFields = {}) {
     actionInput.value = 'update_status';
     form.appendChild(actionInput);
 
-    if (window.csrfToken) {
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrf_token';
-        csrfInput.value = window.csrfToken;
-        form.appendChild(csrfInput);
-    }
+    appendCsrfField(form);
 
     const orderIdInput = document.createElement('input');
     orderIdInput.type = 'hidden';
@@ -189,45 +238,6 @@ function submitOrderStatusUpdate(orderId, newStatus, extraFields = {}) {
     form.submit();
 }
 
-function promptAndScheduleOrder(orderId) {
-    const ridersOptions = typeof ridersData !== 'undefined' && ridersData.length > 0
-        ? `<option value="">— Select rider —</option>${ridersData.map(r => `<option value="${r.User_ID}">${r.name}</option>`).join('')}`
-        : `<option value="">No riders available</option>`;
-
-    Swal.fire({
-        title: 'Schedule Delivery',
-        html: `
-            <input type="date" id="swal-delivery-date" class="swal2-input" placeholder="Delivery Date">
-            <select id="swal-delivery-person" class="swal2-input" style="margin-top:10px;">
-                ${ridersOptions}
-            </select>
-            <textarea id="swal-notes" class="swal2-textarea" placeholder="Notes (optional)" style="margin-top:10px;"></textarea>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Mark Scheduled',
-        preConfirm: () => {
-            const deliveryDate = document.getElementById('swal-delivery-date').value;
-            const deliveryPerson = document.getElementById('swal-delivery-person').value;
-            if (!deliveryDate) {
-                Swal.showValidationMessage('Delivery date is required.');
-                return false;
-            }
-            if (!deliveryPerson) {
-                Swal.showValidationMessage('Please select a rider.');
-                return false;
-            }
-            return {
-                delivery_date: deliveryDate,
-                delivery_person: deliveryPerson,
-                notes: document.getElementById('swal-notes').value
-            };
-        }
-    }).then((result) => {
-        if (!result.isConfirmed) return;
-        submitOrderStatusUpdate(orderId, 'Scheduled for Delivery', result.value);
-    });
-}
-
 // Show create order POS modal
 function showCreateOrderModal() {
     const m = document.getElementById('createOrderModal');
@@ -247,6 +257,7 @@ function showCreateOrderModal() {
     const modalTitle = document.getElementById('createOrderTitle');
     if (modalTitle) {
         modalTitle.innerHTML = '<i class="fas fa-file-invoice"></i> New delivery order';
+        modalTitle.style.color = '#ffffff';
     }
     renderCart();
     renderProductCatalog();
@@ -330,6 +341,7 @@ async function openEditOrder(orderId) {
         const modalTitle = document.getElementById('createOrderTitle');
         if (modalTitle) {
             modalTitle.innerHTML = `<i class="fas fa-pen"></i> Edit order #${orderId}`;
+            modalTitle.style.color = '#ffffff';
         }
 
         orderCart = (data.items || []).map((item) => ({
@@ -491,12 +503,12 @@ function reorderOrder(orderId) {
         if (!result.isConfirmed) return;
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = '../api/orders_backend.php';
+        form.action = getOrdersFormAction();
 
         const fields = {
             action: 'reorder_order',
             order_id: String(orderId),
-            csrf_token: window.csrfToken || ''
+            csrf_token: getPageCsrfToken()
         };
         Object.keys(fields).forEach((key) => {
             const input = document.createElement('input');
@@ -528,8 +540,8 @@ function renderProductCatalog() {
         }
         
         // Filter by category
-        if (currentCategoryFilter !== 'all') {
-            if (product.category_slug !== currentCategoryFilter) return;
+        if (currentCategoryFilter !== 0) {
+            if (product.category_id !== currentCategoryFilter) return;
         }
         
         const priceToDisplay = parseFloat(product.wholesale_price).toFixed(2);
@@ -556,7 +568,8 @@ function renderProductCatalog() {
         // Generate image HTML
         let imageHtml = `<div class="product-card-icon"><i class="fas ${iconName}"></i></div>`;
         if (product.image_url && product.image_url.trim() !== '') {
-            imageHtml = `<img src="../../uploads/products/${product.image_url}" alt="${product.product_name}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:0.5rem; background:#f8fafc;" onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('afterbegin','<div class=\'product-card-icon\'><i class=\'fas fa-cubes\'></i></div>')">`;
+            const imgSrc = getProductImageUrl(product.image_url);
+            imageHtml = `<img src="${imgSrc}" alt="${product.product_name}" style="width:100%; height:120px; object-fit:cover; border-radius:8px; margin-bottom:0.5rem; background:#f8fafc;" onerror="this.style.display='none';this.parentElement.insertAdjacentHTML('afterbegin','<div class=\'product-card-icon\'><i class=\'fas fa-cubes\'></i></div>')">`;
         }
         
         card.innerHTML = `
@@ -583,7 +596,7 @@ function filterCatalog() {
 }
 
 function setCatalogFilter(filter, el) {
-    currentCategoryFilter = filter;
+    currentCategoryFilter = parseInt(filter, 10);
     document.querySelectorAll('.catalog-filter-tab').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
     renderProductCatalog();
@@ -662,7 +675,7 @@ function renderCart() {
         
         // Generate thumbnail for cart item
         const thumbHtml = item.image_url && item.image_url.trim() !== ''
-            ? `<img src="../../uploads/products/${item.image_url}" alt="${item.name}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#f8fafc;" onerror="this.outerHTML='<div style=\'width:44px;height:44px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;\'><i class=\'fas fa-cubes\' style=\'color:#3b82f6;font-size:1.1rem;\'></i></div>'">`
+            ? `<img src="${getProductImageUrl(item.image_url)}" alt="${item.name}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;flex-shrink:0;background:#f8fafc;" onerror="this.outerHTML='<div style=\'width:44px;height:44px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;\'><i class=\'fas fa-cubes\' style=\'color:#3b82f6;font-size:1.1rem;\'></i></div>'">`
             : `<div style="width:44px;height:44px;background:#eff6ff;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><i class="fas fa-cubes" style="color:#3b82f6;font-size:1.1rem;"></i></div>`;
         
         row.innerHTML = `
@@ -772,15 +785,15 @@ function viewOrderDetails(orderId) {
     const modalHtml = `
         <div id="orderDetailsModal" class="order-details-modal" style="display: block; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15,23,42,0.75); backdrop-filter: blur(8px); z-index: 1000; overflow-y: auto; font-family: 'Poppins', sans-serif;">
             <div style="max-width: 700px; width: 92vw; margin: 2rem auto; background: #f8fafc; border-radius: 20px; padding: 0; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.4);">
-                <!-- Dark Header -->
-                <div style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; border-radius: 20px 20px 0 0;">
+                <!-- Brand Blue Header -->
+                <div style="background: linear-gradient(135deg, #7350F5 0%, #5b3fd4 55%, #4338ca 100%); padding: 1.5rem 2rem; display: flex; align-items: center; justify-content: space-between; border-radius: 20px 20px 0 0;">
                     <div style="display: flex; align-items: center; gap: 1rem;">
-                        <div style="width: 48px; height: 48px; background: rgba(99,102,241,0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
-                            <i class="fas fa-shopping-cart" style="color: #818cf8; font-size: 1.25rem;"></i>
+                        <div style="width: 48px; height: 48px; background: rgba(255,255,255,0.18); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                            <i class="fas fa-shopping-cart" style="color: #ffffff; font-size: 1.25rem;"></i>
                         </div>
                         <div>
                             <h2 style="margin: 0; font-size: 1.25rem; font-weight: 700; color: white;">Order Details</h2>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: #94a3b8;">View complete order information</p>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.875rem; color: rgba(255,255,255,0.82);">View complete order information</p>
                         </div>
                     </div>
                     <button onclick="closeOrderDetailsModal()" style="background: rgba(255,255,255,0.1); border: none; width: 40px; height: 40px; border-radius: 10px; cursor: pointer; color: #cbd5e1; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.2)';this.style.color='white';" onmouseout="this.style.background='rgba(255,255,255,0.1)';this.style.color='#cbd5e1';">
@@ -807,12 +820,22 @@ function viewOrderDetails(orderId) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     
     // Fetch order details
-    fetch(`../api/get_order_details.php?order_id=${orderId}`)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
+    fetch(`../api/get_order_details.php?order_id=${orderId}`, {
+        credentials: 'same-origin',
+        cache: 'no-store'
+    })
+        .then(async (response) => {
+            const rawText = await response.text();
+            let data;
+            try {
+                data = JSON.parse(rawText);
+            } catch (parseErr) {
+                throw new Error('Invalid server response while loading order details.');
             }
-            return response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.message || data.error || 'Failed to load order details.');
+            }
+            return data;
         })
         .then(data => {
             const bodyEl = document.getElementById('orderDetailsBody');
@@ -911,6 +934,15 @@ function viewOrderDetails(orderId) {
                                 <span style="font-size: 0.875rem; color: #64748b; width: 60px; flex-shrink: 0;">Address:</span>
                                 <span style="font-size: 0.875rem; color: #334155; line-height: 1.4;">${addr}</span>
                             </div>
+                            ${data.delivery_rider ? `
+                                <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+                                    <span style="font-size: 0.875rem; color: #64748b; width: 60px; flex-shrink: 0;">Rider:</span>
+                                    <span style="font-size: 0.875rem; font-weight: 600; color: #0d9488; display: flex; align-items: center; gap: 0.35rem;">
+                                        <i class="fas fa-motorcycle"></i>
+                                        ${escapeHtml(data.delivery_rider)}
+                                    </span>
+                                </div>
+                            ` : ''}
                         </div>
                     </div>
                 </div>
@@ -1163,7 +1195,7 @@ function updateOrderStatus(orderId, currentStatus) {
             if (result.isConfirmed) {
                 const form = document.createElement('form');
                 form.method = 'POST';
-                form.action = '../api/orders_backend.php';
+                form.action = getOrdersFormAction();
                 
                 const actionInput = document.createElement('input');
                 actionInput.type = 'hidden';
@@ -1171,13 +1203,7 @@ function updateOrderStatus(orderId, currentStatus) {
                 actionInput.value = 'update_status';
                 form.appendChild(actionInput);
                 
-                if (window.csrfToken) {
-                    const csrfInput = document.createElement('input');
-                    csrfInput.type = 'hidden';
-                    csrfInput.name = 'csrf_token';
-                    csrfInput.value = window.csrfToken;
-                    form.appendChild(csrfInput);
-                }
+                appendCsrfField(form);
                 
                 const orderIdInput = document.createElement('input');
                 orderIdInput.type = 'hidden';
@@ -1255,7 +1281,7 @@ function assignDelivery(orderId) {
         if (result.isConfirmed) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '../api/orders_backend.php';
+            form.action = getOrdersFormAction();
             
             const actionInput = document.createElement('input');
             actionInput.type = 'hidden';
@@ -1263,13 +1289,7 @@ function assignDelivery(orderId) {
             actionInput.value = 'assign_delivery';
             form.appendChild(actionInput);
             
-            if (window.csrfToken) {
-                const csrfInput = document.createElement('input');
-                csrfInput.type = 'hidden';
-                csrfInput.name = 'csrf_token';
-                csrfInput.value = window.csrfToken;
-                form.appendChild(csrfInput);
-            }
+            appendCsrfField(form);
             
             const orderIdInput = document.createElement('input');
             orderIdInput.type = 'hidden';
@@ -1347,7 +1367,7 @@ function cancelOrder(orderId) {
         if (result.isConfirmed) {
             const form = document.createElement('form');
             form.method = 'POST';
-            form.action = '../api/orders_backend.php';
+            form.action = getOrdersFormAction();
             
             const actionInput = document.createElement('input');
             actionInput.type = 'hidden';
@@ -1355,13 +1375,7 @@ function cancelOrder(orderId) {
             actionInput.value = 'cancel_order';
             form.appendChild(actionInput);
             
-            if (window.csrfToken) {
-                const csrfInput = document.createElement('input');
-                csrfInput.type = 'hidden';
-                csrfInput.name = 'csrf_token';
-                csrfInput.value = window.csrfToken;
-                form.appendChild(csrfInput);
-            }
+            appendCsrfField(form);
             
             const orderIdInput = document.createElement('input');
             orderIdInput.type = 'hidden';
@@ -1399,25 +1413,103 @@ window.updateCartItemQty = updateCartItemQty;
 window.removeFromCart = removeFromCart;
 window.setCartItemQty = setCartItemQty;
 
-promptAndScheduleOrder = function(orderId) {
-    const ridersOptions = typeof ridersData !== 'undefined' && ridersData.length > 0
-        ? `<option value="">Assign later / no rider yet</option>${ridersData.map(r => `<option value="${r.User_ID}">${r.name}</option>`).join('')}`
-        : `<option value="">Assign later / no rider yet</option>`;
+function ordersEscapeHtml(value) {
+    if (value == null || value === '') return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function resolveScheduleRiderId(prefill) {
+    const pre = prefill || {};
+    const riderId = String(pre.riderId || '').trim();
+    if (riderId && typeof ridersData !== 'undefined' && ridersData.some((r) => String(r.User_ID) === riderId)) {
+        return riderId;
+    }
+    const riderName = String(pre.riderName || '').trim().toLowerCase();
+    if (riderName && typeof ridersData !== 'undefined') {
+        const match = ridersData.find((r) => String(r.name || '').trim().toLowerCase() === riderName);
+        if (match) return String(match.User_ID);
+    }
+    return '';
+}
+
+function buildScheduleRiderOptions(selectedRiderId) {
+    let html = '<option value="">Assign later / no rider yet</option>';
+    if (typeof ridersData !== 'undefined' && ridersData.length > 0) {
+        ridersData.forEach((r) => {
+            const id = String(r.User_ID);
+            const selected = selectedRiderId && id === String(selectedRiderId) ? ' selected' : '';
+            html += `<option value="${ordersEscapeHtml(id)}"${selected}>${ordersEscapeHtml(r.name || ('User #' + id))}</option>`;
+        });
+    }
+    return html;
+}
+
+function buildScheduleDeliveryModalHtml(selectedRiderId) {
+    return `
+        <div class="schedule-delivery-shell">
+            <div class="schedule-delivery-header">
+                <div class="schedule-delivery-header-icon"><i class="fas fa-calendar-check"></i></div>
+                <div>
+                    <h3 class="schedule-delivery-title">Schedule Delivery</h3>
+                    <p class="schedule-delivery-subtitle">Set delivery date and rider assignment</p>
+                </div>
+            </div>
+            <div class="schedule-delivery-body">
+                <div class="schedule-delivery-field">
+                    <label for="swal-delivery-date"><i class="fas fa-calendar-day"></i> Delivery date</label>
+                    <input type="date" id="swal-delivery-date" class="schedule-delivery-input" required>
+                </div>
+                <div class="schedule-delivery-field">
+                    <label for="swal-delivery-person"><i class="fas fa-motorcycle"></i> Assign rider</label>
+                    <select id="swal-delivery-person" class="schedule-delivery-input schedule-delivery-select">
+                        ${buildScheduleRiderOptions(selectedRiderId)}
+                    </select>
+                    <p class="schedule-delivery-hint">You can schedule first and assign a rider later in Delivery Management.</p>
+                </div>
+                <div class="schedule-delivery-field">
+                    <label for="swal-notes"><i class="fas fa-sticky-note"></i> Notes <span>(optional)</span></label>
+                    <textarea id="swal-notes" class="schedule-delivery-textarea" rows="3" placeholder="Add delivery notes…"></textarea>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function promptAndScheduleOrder(orderId, prefill) {
+    const pre = prefill || {};
+    const selectedRiderId = resolveScheduleRiderId(pre);
 
     Swal.fire({
         title: 'Schedule Delivery',
-        html: `
-            <input type="date" id="swal-delivery-date" class="swal2-input" placeholder="Delivery Date">
-            <select id="swal-delivery-person" class="swal2-input" style="margin-top:10px;">
-                ${ridersOptions}
-            </select>
-            <div style="margin-top:8px; font-size:0.82rem; color:#64748b; text-align:left;">
-                You can schedule first and assign a rider later in Delivery Management.
-            </div>
-            <textarea id="swal-notes" class="swal2-textarea" placeholder="Notes (optional)" style="margin-top:10px;"></textarea>
-        `,
+        html: buildScheduleDeliveryModalHtml(selectedRiderId),
         showCancelButton: true,
         confirmButtonText: 'Mark Scheduled',
+        cancelButtonText: 'Cancel',
+        focusConfirm: false,
+        customClass: {
+            popup: 'schedule-delivery-popup',
+            confirmButton: 'schedule-delivery-btn schedule-delivery-btn-primary',
+            cancelButton: 'schedule-delivery-btn schedule-delivery-btn-secondary',
+            htmlContainer: 'schedule-delivery-html-wrap'
+        },
+        didOpen: () => {
+            const dateEl = document.getElementById('swal-delivery-date');
+            const notesEl = document.getElementById('swal-notes');
+            const riderEl = document.getElementById('swal-delivery-person');
+            if (dateEl && pre.deliveryDate) {
+                dateEl.value = pre.deliveryDate;
+            }
+            if (notesEl && pre.notes) {
+                notesEl.value = pre.notes;
+            }
+            if (riderEl && selectedRiderId) {
+                riderEl.value = selectedRiderId;
+            }
+        },
         preConfirm: () => {
             const deliveryDate = document.getElementById('swal-delivery-date').value;
             const deliveryPerson = document.getElementById('swal-delivery-person').value;
@@ -1435,7 +1527,7 @@ promptAndScheduleOrder = function(orderId) {
         if (!result.isConfirmed) return;
         submitOrderStatusUpdate(orderId, 'Scheduled for Delivery', result.value);
     });
-};
+}
 window.promptAndScheduleOrder = promptAndScheduleOrder;
 
 } // end orders.js double-load guard

@@ -87,12 +87,12 @@ if (!function_exists('getUnreadNotificationsCount')) {
         $role_id = isset($_SESSION['user_role']) ? (int)$_SESSION['user_role'] : 0;
         
         // Define management and staff roles
-        if (!function_exists('getInventoryStaffRoleIds')) {
+        if (!function_exists('getManagementRoleIds')) {
             require_once __DIR__ . '/roles_helper.php';
         }
-        $management_roles = [1, 2];
+        $management_roles = getManagementRoleIds($conn);
         $staff_roles = getInventoryStaffRoleIds($conn);
-        $allowed_roles = array_unique(array_merge($management_roles, $staff_roles));
+        $allowed_roles = array_values(array_unique(array_merge($management_roles, $staff_roles)));
         
         if (!in_array($role_id, $allowed_roles, true)) {
             return 0;
@@ -117,13 +117,17 @@ if (!function_exists('getUnreadNotificationsCount')) {
             $params = [':last_seen' => $last_seen_log_id];
             
             if (!in_array($role_id, $management_roles, true)) {
+                $userId = (int)($_SESSION['user_id'] ?? 0);
                 $where .= " AND (
                     (al.Activity_Type = 'DELIVERY' AND (al.Action_Details LIKE '%damage%' OR al.Action_Details LIKE '%Damage%'))
                     OR
                     (al.Activity_Type = 'INVENTORY' AND (al.Action_Details LIKE '%damage%' OR al.Action_Details LIKE '%Damage%'))
                     OR
                     (al.Activity_Type = 'ORDER' AND (al.Action_Details LIKE '%Created new order%' OR al.Action_Details LIKE '%Scheduled delivery%'))
+                    OR
+                    (al.Activity_Type = 'NOTIFICATION' AND al.User_ID = :staff_user_id)
                 )";
+                $params[':staff_user_id'] = $userId;
             }
             
             $query = "SELECT COUNT(*) FROM activity_logs al WHERE $where";

@@ -142,13 +142,97 @@
     }
   }
 
-  function initBell() {
-    var wrap = document.querySelector('.inv-bell-wrap');
-    if (!wrap) return;
+  var notifRoot = null;
+  var notifBadge = null;
+  var notifUserId = 0;
+  var notifLastId = 0;
+  var notifUnreadCount = 0;
+  var notifShownSet = {};
+  var notifBootstrapped = false;
 
+  function notifStorageKey(suffix) {
+    return 'inv_notif_' + suffix + '_' + notifUserId;
+  }
+
+  function loadNotifState() {
+    if (!notifRoot) return;
+    notifUserId = parseInt(notifRoot.getAttribute('data-user-id') || '0', 10);
+    var serverCount = parseInt(notifRoot.getAttribute('data-unread-count') || '0', 10);
+    var storedCount = parseInt(sessionStorage.getItem(notifStorageKey('count')) || '0', 10);
+    notifUnreadCount = Math.max(serverCount, storedCount);
+    var serverLastSeen = parseInt(notifRoot.getAttribute('data-last-seen-id') || '0', 10);
+    var storedLastId = parseInt(sessionStorage.getItem(notifStorageKey('lastId')) || '0', 10);
+    notifLastId = Math.max(serverLastSeen, storedLastId);
+    try {
+      JSON.parse(sessionStorage.getItem(notifStorageKey('shown')) || '[]').forEach(function (key) {
+        notifShownSet[key] = true;
+      });
+    } catch (e) {
+      notifShownSet = {};
+    }
+    updateInvBellBadge();
+  }
+
+  function persistNotifState() {
+    if (!notifUserId) return;
+    sessionStorage.setItem(notifStorageKey('lastId'), String(notifLastId));
+    sessionStorage.setItem(notifStorageKey('count'), String(notifUnreadCount));
+    sessionStorage.setItem(notifStorageKey('shown'), JSON.stringify(Object.keys(notifShownSet)));
+  }
+
+  function updateInvBellBadge() {
+    if (!notifBadge) return;
+    if (notifUnreadCount > 0) {
+      notifBadge.textContent = notifUnreadCount > 99 ? '99+' : String(notifUnreadCount);
+      notifBadge.classList.remove('hidden');
+    } else {
+      notifBadge.classList.add('hidden');
+    }
+  }
+
+  function logNotificationKey(log, pkField) {
+    var rawId = log[pkField] || log.Log_ID || '';
+    return String(rawId);
+  }
+
+  function notifyOnce(key, title, message) {
+    if (!key || notifShownSet[key]) return false;
+    notifShownSet[key] = true;
+    persistNotifState();
+    try { playNotificationSound(); } catch (e) {}
+    showInventoryToast(title, message);
+    notifUnreadCount++;
+    updateInvBellBadge();
+    return true;
+  }
+
+  function bootstrapNotificationCursor() {
+    if (notifBootstrapped) return;
+    notifBootstrapped = true;
+    fetch('../api/get_recent_activities.php?limit=1&last_id=0', { credentials: 'same-origin', cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data || data.status !== 'success') return;
+        var maxId = parseInt(data.max_log_id || 0, 10);
+        if (maxId > notifLastId) {
+          notifLastId = maxId;
+          persistNotifState();
+        }
+      })
+      .catch(function () {});
+  }
+
+  function initBell() {
+    notifRoot = document.getElementById('invStaffNotifRoot') || document.querySelector('.inv-bell-wrap');
+    if (!notifRoot) return;
+
+    var wrap = notifRoot;
     var btn = wrap.querySelector('.inv-bell-btn');
+    notifBadge = document.getElementById('invStaffNotifBadge') || btn.querySelector('span.bg-red-500');
     var panel = wrap.querySelector('.inv-bell-dd-panel');
     var list = document.getElementById('invStaffBellList');
+    loadNotifState();
+    bootstrapNotificationCursor();
 
     var onResize = function () {
       if (wrap.classList.contains('inv-dd-open')) {
@@ -164,11 +248,10 @@
         btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         positionBellDropdown(btn, panel, open);
         if (open) {
-          var badge = btn.querySelector('span.bg-red-500');
-          if (badge) {
-            badge.style.display = 'none';
-          }
-          fetch('../api/mark_notifications_read.php')
+          notifUnreadCount = 0;
+          updateInvBellBadge();
+          persistNotifState();
+          fetch('../api/mark_notifications_read.php', { credentials: 'same-origin', cache: 'no-store' })
             .then(function(r) { return r.json(); })
             .catch(function(err) { console.error('Failed to mark notifications read:', err); });
         }
@@ -265,33 +348,34 @@
     if (relevantEvents.indexOf(payload.event) === -1) return;
 
     // Notify of new order to prepare if on preparation queue page
-    if ((payload.event === 'order.created' || payload.event === 'order.scheduled')) {
-      try {
-        playNotificationSound();
-      } catch (e) {}
-
-      if (typeof Swal !== 'undefined' && document.querySelector('[data-prep-order-id]')) {
-        Swal.fire({
-          toast: true,
-          position: 'top-end',
-          icon: 'info',
-          title: 'New order #' + (payload.data.order_id || '') + ' to prepare!',
-          showCancelButton: true,
-          confirmButtonText: 'Refresh Queue',
-          cancelButtonText: 'Dismiss',
-          confirmButtonColor: '#6366f1',
-          timer: 10000,
-          timerProgressBar: true
-        }).then(function(result) {
-          if (result.isConfirmed) {
-            window.location.reload();
-          }
-        });
+    if (payload.event === 'order.created' || payload.event === 'order.scheduled') {
+      var orderKey = payload.event + ':' + (payload.data && payload.data.order_id ? payload.data.order_id : '');
+      if (notifyOnce(orderKey, 'New Order', 'New order #' + (payload.data.order_id || '') + ' to prepare!')) {
+        if (typeof Swal !== 'undefined' && document.querySelector('[data-prep-order-id]')) {
+          Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: 'info',
+            title: 'New order #' + (payload.data.order_id || '') + ' to prepare!',
+            showCancelButton: true,
+            confirmButtonText: 'Refresh Queue',
+            cancelButtonText: 'Dismiss',
+            confirmButtonColor: '#7350F5',
+            timer: 10000,
+            timerProgressBar: true
+          }).then(function(result) {
+            if (result.isConfirmed) {
+              window.location.reload();
+            }
+          });
+        }
       }
     }
 
-    // Increment notification badge
-    updateBellBadge(1);
+    if (payload.event === 'delivery.damage_report') {
+      var damageKey = 'delivery.damage_report:' + (payload.data && (payload.data.report_id || payload.data.delivery_id) ? (payload.data.report_id || payload.data.delivery_id) : '');
+      notifyOnce(damageKey, 'Delivery Damage', payload.data && payload.data.message ? payload.data.message : 'New delivery damage report submitted');
+    }
 
     // If panel is open and loaded, prepend the new activity
     var list = document.getElementById('invStaffBellList');
@@ -333,10 +417,8 @@
     var status = payload.data.status;
     var userName = payload.data.user_name;
 
-    // Play sound notification
-    try {
-      playNotificationSound();
-    } catch (e) {}
+    var prepKey = 'prep_task:' + orderId + ':' + status;
+    notifyOnce(prepKey, 'Prep Update', 'Order #' + orderId + ' status changed');
 
     // Find the preparation card in the DOM
     var card = document.querySelector('[data-prep-order-id="' + orderId + '"]');
@@ -394,48 +476,6 @@
       }
     }
 
-    // Show SweetAlert2 Toast if loaded
-    if (typeof Swal !== 'undefined') {
-      var toastCfg = {
-        'preparing':   { text: 'Staff ' + userName + ' is preparing Order #' + orderId, icon: 'info' },
-        'ready':       { text: 'Order #' + orderId + ' is now Ready for Pickup!', icon: 'success' },
-        'short_stock': { text: 'Order #' + orderId + ' is marked Short Stock!', icon: 'info' },
-      };
-      var tCfg = toastCfg[status];
-      if (tCfg) {
-        Swal.fire({
-          toast: true,
-          position: 'top-end',
-          icon: tCfg.icon,
-          title: tCfg.text,
-          showConfirmButton: false,
-          timer: 4000,
-          timerProgressBar: true
-        });
-      }
-    }
-  }
-
-  function updateBellBadge(delta) {
-    var btn = document.querySelector('.inv-bell-btn');
-    if (!btn) return;
-
-    var badge = btn.querySelector('span.bg-red-500');
-    if (badge) {
-      var current = 0;
-      if (badge.style.display !== 'none') {
-        current = badge.textContent.indexOf('+') !== -1 ? 100 : parseInt(badge.textContent, 10);
-      } else {
-        badge.style.display = '';
-      }
-      var newVal = current + delta;
-      badge.textContent = newVal > 99 ? '99+' : newVal;
-    } else {
-      badge = document.createElement('span');
-      badge.className = 'pointer-events-none absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-black leading-none text-white shadow-sm ring-2 ring-white';
-      badge.textContent = delta > 99 ? '99+' : delta;
-      btn.appendChild(badge);
-    }
   }
 
   function loadBellActivities(listEl) {
@@ -542,13 +582,15 @@
 
   var notifLastId = 0;
 
-  function showInventoryToast(message) {
+  function showInventoryToast(title, message) {
+    var text = message || title || 'Notification';
     if (typeof Swal !== 'undefined') {
       Swal.fire({
         toast: true,
         position: 'top-end',
         icon: 'info',
-        title: message,
+        title: title && message ? title : text,
+        text: title && message ? message : undefined,
         showConfirmButton: false,
         timer: 5000,
         timerProgressBar: true
@@ -556,21 +598,34 @@
     }
   }
 
-  function pollNotifications() {
-    fetch('../api/get_recent_activities.php?limit=5&last_id=' + notifLastId)
+  function pollNotifications(isPolling) {
+    if (!notifBootstrapped) return;
+    var url = '../api/get_recent_activities.php?limit=8&last_id=' + (isPolling ? notifLastId : 0);
+    fetch(url, { credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.status !== 'success' || !data.logs || data.logs.length === 0) return;
+        if (data.status !== 'success' || !data.logs || data.logs.length === 0) {
+          if (data && data.max_log_id) {
+            var maxId = parseInt(data.max_log_id, 10);
+            if (!isPolling && maxId > notifLastId) {
+              notifLastId = maxId;
+              persistNotifState();
+            }
+          }
+          return;
+        }
         var pkField = data.pk || 'Log_ID';
         data.logs.forEach(function (log) {
-          var logId = parseInt(log[pkField] || log.Log_ID || 0, 10);
-          if (notifLastId > 0 && logId > notifLastId) {
-            playNotificationSound();
-            showInventoryToast(log.Action_Details || log.Activity || 'Notification');
-            updateBellBadge(1);
+          var logKey = logNotificationKey(log, pkField);
+          var logIdNum = parseInt(logKey, 10);
+          if (!isNaN(logIdNum) && logIdNum > notifLastId) {
+            notifLastId = logIdNum;
           }
-          if (logId > notifLastId) notifLastId = logId;
+          if (isPolling) {
+            notifyOnce(logKey, log.Activity_Type || 'Activity', log.Action_Details || log.Activity || 'New activity');
+          }
         });
+        persistNotifState();
       }).catch(function () {});
   }
 
@@ -578,8 +633,11 @@
     initBell();
     initDrawer();
     initDragScroll();
-    pollNotifications();
-    setInterval(pollNotifications, 10000);
+    bootstrapNotificationCursor();
+    setTimeout(function () {
+      pollNotifications(false);
+      setInterval(function () { pollNotifications(true); }, 10000);
+    }, 400);
   });
 
   function initDragScroll() {

@@ -1,19 +1,21 @@
 <?php
 declare(strict_types=1);
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
 require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/logger.php';
 require_once '../includes/csrf.php';
 require_once '../includes/rate_limiter.php';
+require_once '../includes/roles_helper.php';
 require_once '../includes/services/orders_service.php';
 
-// Accessible to Owner (1), Manager (2), and Cashier (3)
-requireRole([1, 2, 3]);
+$orders_allowed_roles = getManagementRoleIds($conn);
+$cashier_ids = getCashierRoleIds($conn);
+$orders_allowed_roles = array_values(array_unique(array_merge(
+    empty($orders_allowed_roles) ? [1] : $orders_allowed_roles,
+    $cashier_ids
+)));
+requireRole($orders_allowed_roles);
 
 enforceRateLimit(rateLimitKey('orders'), 60, 60);
 
@@ -32,9 +34,12 @@ $state_changing_actions = ['create_order', 'update_order', 'reorder_order', 'upd
 $action = (string)($_POST['action'] ?? '');
 if (in_array($action, $state_changing_actions, true) && !validateCsrfToken(false)) {
     $error_msg = 'Invalid or expired security token. Please refresh the page and try again.';
-    if (isset($_GET['ajax']) || in_array($action, ['update_status', 'assign_delivery', 'cancel_order'], true)) {
+    $wants_json = isset($_GET['ajax'])
+        || (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower((string)$_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest')
+        || (strpos(strtolower((string)($_SERVER['HTTP_ACCEPT'] ?? '')), 'application/json') !== false);
+    if ($wants_json) {
         http_response_code(403);
-        echo json_encode(['success' => false, 'error' => $error_msg]);
+        echo json_encode(['success' => false, 'error' => $error_msg, 'csrf_token' => getCsrfToken()]);
         exit();
     }
     header("Location: ../pages/orders.php?error=" . urlencode($error_msg));

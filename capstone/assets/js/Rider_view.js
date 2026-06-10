@@ -54,9 +54,45 @@
     }, true);
 })();
 
+function getRiderCsrfToken() {
+    if (typeof window.csrfToken === 'string' && window.csrfToken) return window.csrfToken;
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta && meta.content) {
+        window.csrfToken = meta.content;
+        return meta.content;
+    }
+    var input = document.querySelector('input[name="csrf_token"]');
+    if (input && input.value) {
+        window.csrfToken = input.value;
+        return input.value;
+    }
+    return '';
+}
+
+function applyCsrfToken(token) {
+    if (!token || typeof token !== 'string') return;
+    window.csrfToken = token;
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    if (meta) meta.setAttribute('content', token);
+    document.querySelectorAll('input[name="csrf_token"]').forEach(function (input) {
+        input.value = token;
+    });
+}
+
+function riderApiErrorMessage(data, fallback) {
+    if (data && data.csrf_token) {
+        applyCsrfToken(data.csrf_token);
+    }
+    var msg = (data && (data.message || data.error)) || fallback || 'Request failed';
+    if (/security token/i.test(msg) && data && data.csrf_token) {
+        return 'Your session was refreshed. Please try again.';
+    }
+    return msg;
+}
+
 (function applyRiderViewConfig() {
     var cfg = typeof window.RIDER_VIEW_CONFIG === 'object' && window.RIDER_VIEW_CONFIG ? window.RIDER_VIEW_CONFIG : {};
-    window.csrfToken = cfg.csrfToken || '';
+    window.csrfToken = cfg.csrfToken || getRiderCsrfToken();
     window.currentRiderUserId = Number(cfg.currentRiderUserId) || 0;
     window.deliveryCancellationReasons = Array.isArray(cfg.deliveryCancellationReasons) ? cfg.deliveryCancellationReasons : [];
     window.__riderDeliveryIds = Array.isArray(cfg.deliveryIds) ? cfg.deliveryIds.map(function (id) { return parseInt(id, 10) || 0; }) : [];
@@ -1037,6 +1073,170 @@ window.addEventListener('hashchange', () => {
     if (tab) switchToTab(tab);
 });
 
+function deriveItemReceivedQty(item) {
+    const ordered = parseFloat(item.ordered_qty) || 0;
+    const reportedDamage = parseFloat(item.reported_damage_qty) || 0;
+    if (item.suggested_received_qty != null && item.suggested_received_qty !== '') {
+        return Math.max(0, parseFloat(item.suggested_received_qty) || 0);
+    }
+    if (reportedDamage > 0) {
+        return Math.max(0, ordered - reportedDamage);
+    }
+    const stored = parseFloat(item.received_qty);
+    if (!Number.isNaN(stored) && stored > 0 && stored < ordered) {
+        return stored;
+    }
+    return ordered;
+}
+
+function computeCollectibleFromItems(items) {
+    return (items || []).reduce((sum, item) => {
+        const received = deriveItemReceivedQty(item);
+        const price = parseFloat(item.unit_price) || 0;
+        return sum + received * price;
+    }, 0);
+}
+
+function escapeHtmlText(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+}
+
+function renderDetailItemChecklist(items, deliveryId, damageReportsEnabled) {
+    const showDamageActions = damageReportsEnabled && HAS_DELIVERY_DAMAGE_REPORTS;
+    let html = '';
+    (items || []).forEach((item, i) => {
+        const unitLabel = item.unit || 'Pieces';
+        const unitBadge = item.unit
+            ? `<span class="badge rounded-pill bg-indigo-100 text-indigo-700 border border-indigo-300 fw-semibold px-2 py-1" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em;">${escapeHtmlText(unitLabel)}</span>`
+            : '';
+        const orderedQty = parseFloat(item.ordered_qty) || 0;
+        const reportedDamage = parseFloat(item.reported_damage_qty) || 0;
+        const receivedValue = deriveItemReceivedQty(item);
+        const hasDamage = reportedDamage > 0;
+        const damageBadge = hasDamage
+            ? `<span class="badge rounded-pill fw-semibold px-2 py-1 border" style="font-size: 0.72rem; background: #fff7ed; color: #c2410c; border-color: #fdba74;"><i class="fas fa-triangle-exclamation me-1"></i>Damaged: ${formatWholeNumber(reportedDamage)}</span>`
+            : '';
+        const receivedReadOnly = hasDamage || showDamageActions;
+        const receivedField = receivedReadOnly
+            ? `<div class="fw-bold text-dark text-center bg-emerald-50 border border-emerald-200 rounded-lg d-flex align-items-center justify-content-center" style="width: 100px; height: 42px; font-size: 1rem; border-radius: 10px;" data-received-display="${i}">${formatWholeNumber(receivedValue)}</div>
+               <input type="hidden" name="received_${i}" value="${receivedValue}" data-order-detail-id="${item.order_detail_id || 0}">`
+            : `<input class="form-control text-center fw-semibold bg-slate-50 border-slate-200 rounded-lg" type="number" step="0.01" min="0" max="${orderedQty}" name="received_${i}" value="${receivedValue}" data-order-detail-id="${item.order_detail_id || 0}" style="width: 100px; height: 42px; font-size: 1rem; border-radius: 10px;">`;
+        const reportBtn = showDamageActions
+            ? `<button type="button" class="btn btn-sm btn-outline-warning rounded-pill mt-2 px-3 fw-semibold" style="font-size: 0.75rem;" onclick="openDamageReportModal(${deliveryId}, ${item.order_detail_id || 0})"><i class="fas fa-camera me-1"></i>Report damage</button>`
+            : '';
+
+        html += `<div class="item-checklist-card bg-white rounded-[16px] p-4 mb-3 border border-slate-200 shadow-sm" data-order-detail-id="${item.order_detail_id || 0}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+                <div class="flex-grow-1">
+                    <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                        <h6 class="fw-bold text-dark mb-0" style="font-size: 1.05rem; font-family: 'Plus Jakarta Sans', sans-serif;">${escapeHtmlText(item.product_name || 'Item')}</h6>
+                        ${unitBadge}
+                        ${damageBadge}
+                    </div>
+                    <p class="text-slate-500 mb-0" style="font-size: 0.875rem;">Ordered: <span class="fw-semibold text-slate-700">${formatWholeNumber(orderedQty)} ${escapeHtmlText(unitLabel)}</span></p>
+                    <input type="hidden" name="dd_${i}_id" value="${item.delivery_detail_id}">
+                    ${reportBtn}
+                </div>
+                <div class="text-end">
+                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 d-block">Received</label>
+                    <div class="position-relative">${receivedField}</div>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    if ((items || []).length && showDamageActions) {
+        html += `<div class="d-flex align-items-start gap-2 mt-2 p-3 rounded-[12px] bg-amber-50 border border-amber-100">
+            <i class="fas fa-info-circle text-amber-500 mt-0.5"></i>
+            <p class="text-amber-900 mb-0" style="font-size: 0.8125rem;">Use <span class="fw-semibold">Report damage</span> on each line. <span class="fw-semibold">Received</span> updates automatically as ordered minus reported damage.</p>
+        </div>`;
+    } else if ((items || []).length) {
+        html += `<div class="d-flex align-items-start gap-2 mt-2 p-3 rounded-[12px] bg-slate-50 border border-slate-100">
+            <i class="fas fa-info-circle text-slate-400 mt-0.5"></i>
+            <p class="text-slate-500 mb-0" style="font-size: 0.8125rem;">Adjust <span class="fw-semibold text-slate-700">Received</span> if the customer did not take the full quantity.</p>
+        </div>`;
+    }
+
+    return html || '<p class="text-muted">No items</p>';
+}
+
+function updateArPostNote(total, paid) {
+    const remaining = Math.max(0, total - paid);
+    const el = document.getElementById('arPostNote');
+    if (el) el.textContent = 'To be posted to AR: \u20B1' + remaining.toFixed(2);
+}
+
+function applyDetailModalData(data, deliveryId) {
+    deliveryData = data;
+    const d = data.delivery || {};
+    const detailStatus = (d.delivery_status || '').toString();
+    const allowCancel = detailStatus === 'Scheduled' || detailStatus === 'In Transit';
+    const addr = d.delivery_address || d.order_delivery_address || d.customer_address || '';
+    const custName = d.customer_name || 'Customer';
+    document.getElementById('detailCustomerName').textContent = custName;
+    document.getElementById('detailCustomerPhone').innerHTML = d.phone_number ? '<i class="fas fa-phone-alt me-1"></i>' + d.phone_number : '';
+    document.getElementById('detailAddress').innerHTML = addr ? '<i class="fas fa-map-marker-alt"></i> <span>' + addr + '</span>' : '';
+
+    const expectedAmt = parseFloat(d.total_amount || 0);
+    const collectibleAmt = parseFloat(d.collectible_amount);
+    const amountForCollection = !Number.isNaN(collectibleAmt) && collectibleAmt >= 0 ? collectibleAmt : computeCollectibleFromItems(data.items);
+    const expectedLabel = document.getElementById('expectedLabel');
+    const collectLabel = document.getElementById('collectLabel');
+    const amtInput = document.getElementById('amountToCollect');
+    const arInfo = document.getElementById('arInfo');
+
+    const isAr = d.is_ar == 1;
+    if (isAr) {
+        expectedLabel.textContent = 'AR Total';
+        collectLabel.textContent = 'Amount Paid';
+        amtInput.value = '0';
+        amtInput.placeholder = '0.00';
+        document.getElementById('detailTotalDisplay').textContent = '\u20B1' + expectedAmt.toLocaleString('en-PH', { minimumFractionDigits: 0 });
+        arInfo.style.display = 'block';
+        updateArPostNote(expectedAmt, 0);
+        amtInput.oninput = function() {
+            const paid = parseFloat(this.value) || 0;
+            updateArPostNote(expectedAmt, paid);
+        };
+    } else {
+        expectedLabel.textContent = 'Expected';
+        collectLabel.textContent = 'Amount to Collect';
+        document.getElementById('detailTotalDisplay').textContent = '\u20B1' + expectedAmt.toLocaleString('en-PH', { minimumFractionDigits: 0 });
+        if (amountForCollection < expectedAmt - 0.009) {
+            document.getElementById('detailTotalDisplay').innerHTML = '<span class="text-decoration-line-through text-slate-400 me-2" style="font-size:0.85rem;">\u20B1' + expectedAmt.toLocaleString('en-PH', { minimumFractionDigits: 0 }) + '</span>'
+                + '\u20B1' + amountForCollection.toLocaleString('en-PH', { minimumFractionDigits: 0 });
+        }
+        amtInput.value = amountForCollection > 0 ? amountForCollection : '';
+        arInfo.style.display = 'none';
+        amtInput.oninput = null;
+    }
+
+    const sel = document.getElementById('deliveredTo');
+    sel.innerHTML = '<option value="">-- Select customer --</option><option value="' + (custName ? custName.replace(/"/g, '&quot;') : '') + '" selected>' + (custName || 'Customer') + '</option><option value="_other_">Other (enter name)</option>';
+    document.getElementById('detailItems').innerHTML = renderDetailItemChecklist(
+        data.items || [],
+        deliveryId,
+        !!data.damage_reports_enabled
+    );
+
+    document.getElementById('btnCancelDeliveryModal').style.display = allowCancel ? 'inline-flex' : 'none';
+    document.getElementById('btnConfirmDelivery').style.display = detailStatus === 'In Transit' ? 'inline-flex' : 'none';
+}
+
+function refreshDetailModalItems(deliveryId) {
+    return fetch(`../api/get_delivery_details.php?delivery_id=${deliveryId}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) {
+                throw new Error(data.message || 'Failed to refresh items');
+            }
+            applyDetailModalData(data, deliveryId);
+            return data;
+        });
+}
+
 function openDetailModal(deliveryId, orderId) {
     currentDeliveryId = deliveryId;
     currentOrderId = orderId;
@@ -1047,65 +1247,7 @@ function openDetailModal(deliveryId, orderId) {
                 Swal.fire('Error', data.message || 'Failed to load delivery', 'error');
                 return;
             }
-            deliveryData = data;
-            const d = data.delivery || {};
-            const detailStatus = (d.delivery_status || '').toString();
-            const allowCancel = detailStatus === 'Scheduled' || detailStatus === 'In Transit';
-            const addr = d.delivery_address || d.order_delivery_address || d.customer_address || '';
-            const custName = d.customer_name || 'Customer';
-            document.getElementById('detailCustomerName').textContent = custName;
-            document.getElementById('detailCustomerPhone').innerHTML = d.phone_number ? '<i class="fas fa-phone-alt me-1"></i>' + d.phone_number : '';
-            document.getElementById('detailAddress').innerHTML = addr ? '<i class="fas fa-map-marker-alt"></i> <span>' + addr + '</span>' : '';
-            const totalAmt = parseFloat(d.total_amount || 0);
-            document.getElementById('detailTotalDisplay').textContent = '\u20B1' + totalAmt.toLocaleString('en-PH', {minimumFractionDigits: 0});
-            document.getElementById('amountToCollect').value = totalAmt > 0 ? totalAmt : '';
-            const isAr = d.is_ar == 1;
-            const collectGroup = document.getElementById('collectInputGroup');
-            const arNote = document.getElementById('arCollectNote');
-            const arReveal = document.getElementById('arRevealLink');
-            if (isAr) {
-                if (collectGroup) collectGroup.style.display = 'none';
-                document.getElementById('amountToCollect').value = '0';
-                if (arNote) arNote.style.display = 'flex';
-                if (arReveal) arReveal.style.display = 'block';
-            } else {
-                if (collectGroup) collectGroup.style.display = 'block';
-                if (arNote) arNote.style.display = 'none';
-                if (arReveal) arReveal.style.display = 'none';
-            }
-            const sel = document.getElementById('deliveredTo');
-            sel.innerHTML = '<option value="">-- Select customer --</option><option value="' + (custName ? custName.replace(/"/g, '&quot;') : '') + '" selected>' + (custName || 'Customer') + '</option><option value="_other_">Other (enter name)</option>';
-            let html = '';
-            (data.items || []).forEach((item, i) => {
-                const unitBadge = item.unit ? `<span class="badge rounded-pill bg-indigo-100 text-indigo-700 border border-indigo-300 fw-semibold px-2 py-1" style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em;">${item.unit}</span>` : '';
-                const receivedValue = item.received_qty ?? item.ordered_qty ?? 0;
-                html += `<div class="item-checklist-card bg-white rounded-[16px] p-4 mb-3 border border-slate-200 shadow-sm">
-                    <div class="d-flex justify-content-between align-items-start gap-3">
-                        <div class="flex-grow-1">
-                            <div class="d-flex align-items-center gap-2 mb-2">
-                                <h6 class="fw-bold text-dark mb-0" style="font-size: 1.05rem; font-family: 'Plus Jakarta Sans', sans-serif;">${item.product_name || 'Item'}</h6>
-                                ${unitBadge}
-                            </div>
-                            <p class="text-slate-500 mb-0" style="font-size: 0.875rem;">Ordered: <span class="fw-semibold text-slate-700">${item.ordered_qty || 0} ${item.unit || 'Pieces'}</span></p>
-                            <input type="hidden" name="dd_${i}_id" value="${item.delivery_detail_id}">
-                        </div>
-                        <div class="text-end">
-                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 d-block">Received</label>
-                            <div class="position-relative">
-                                <input class="form-control text-center fw-semibold bg-slate-50 border-slate-200 rounded-lg" type="number" step="0.01" min="0" name="received_${i}" value="${receivedValue}" style="width: 100px; height: 42px; font-size: 1rem; border-radius: 10px;">
-                            </div>
-                        </div>
-                    </div>
-                </div>`;
-            });
-            if ((data.items || []).length) {
-                html += `<div class="d-flex align-items-start gap-2 mt-4 p-3 rounded-[12px] bg-slate-50 border border-slate-100">
-                    <i class="fas fa-info-circle text-slate-400 mt-0.5"></i>
-                    <p class="text-slate-500 mb-0" style="font-size: 0.8125rem;">Report product damage using <span class="fw-semibold text-slate-700">Report delivery damage</span> on the delivery card (not here).</p>
-                </div>`;
-            }
-            document.getElementById('detailItems').innerHTML = html || '<p class="text-muted">No items</p>';
-
+            applyDetailModalData(data, deliveryId);
             document.getElementById('deliveredToOther').value = '';
             document.getElementById('deliveredToOther').style.display = 'none';
             document.getElementById('deliveryRemarks').value = '';
@@ -1113,11 +1255,9 @@ function openDetailModal(deliveryId, orderId) {
             document.getElementById('proofPreview').style.display = 'none';
             const proofPreviewGrid = document.getElementById('proofPreviewGrid');
             if (proofPreviewGrid) proofPreviewGrid.innerHTML = '';
-            document.getElementById('btnCancelDeliveryModal').style.display = allowCancel ? 'inline-flex' : 'none';
-            document.getElementById('btnConfirmDelivery').style.display = detailStatus === 'In Transit' ? 'inline-flex' : 'none';
             detailModal.show();
         })
-        .catch(err => Swal.fire('Error', 'Network error', 'error'));
+        .catch(() => Swal.fire('Error', 'Network error', 'error'));
 }
 
 function toggleArCollectInput() {
@@ -1149,13 +1289,14 @@ function ddrUpdateQtyHint() {
     if (qty && (parseInt(qty.value || '0', 10) || 0) > max) qty.value = String(max);
 }
 
-function openDamageReportModal(deliveryId) {
+function openDamageReportModal(deliveryId, preselectOrderDetailId) {
     if (!damageReportModal) return;
     document.getElementById('ddr_delivery_id').value = deliveryId;
     document.getElementById('ddr_qty').value = '';
     document.getElementById('ddr_reason').value = '';
     const photo = document.getElementById('ddr_photo');
     if (photo) photo.value = '';
+    const preselectId = parseInt(preselectOrderDetailId || 0, 10) || 0;
     fetch(`../api/delivery_damage_backend.php?action=order_lines&delivery_id=${deliveryId}`)
         .then(r => r.json())
         .then(data => {
@@ -1179,6 +1320,17 @@ function openDamageReportModal(deliveryId) {
                 Swal.fire('Nothing to report', 'Remaining quantity is zero for all lines on this order.', 'info');
                 return;
             }
+            if (preselectId > 0) {
+                sel.value = String(preselectId);
+                if (sel.value !== String(preselectId)) {
+                    for (let i = 0; i < sel.options.length; i++) {
+                        if (parseInt(sel.options[i].value, 10) === preselectId) {
+                            sel.selectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
             sel.onchange = ddrUpdateQtyHint;
             ddrUpdateQtyHint();
             damageReportModal.show();
@@ -1189,7 +1341,8 @@ function openDamageReportModal(deliveryId) {
 function submitDamageReport() {
     const fd = new FormData();
     fd.append('action', 'submit');
-    if (window.csrfToken) fd.append('csrf_token', window.csrfToken);
+    var csrf = getRiderCsrfToken();
+    if (csrf) fd.append('csrf_token', csrf);
     fd.append('delivery_id', document.getElementById('ddr_delivery_id').value);
     fd.append('order_detail_id', document.getElementById('ddr_order_detail_id').value);
     fd.append('damaged_qty', document.getElementById('ddr_qty').value);
@@ -1220,7 +1373,16 @@ function submitDamageReport() {
             if (btn) { btn.disabled = false; }
             if (data.success) {
                 if (damageReportModal) damageReportModal.hide();
-                Swal.fire('Submitted', 'Your report is pending staff review.', 'success').then(() => window.location.reload());
+                const detailEl = document.getElementById('detailModal');
+                const detailOpen = detailEl && detailEl.classList.contains('show');
+                const deliveryId = parseInt(document.getElementById('ddr_delivery_id')?.value || currentDeliveryId || 0, 10) || 0;
+                if (detailOpen && deliveryId > 0) {
+                    refreshDetailModalItems(deliveryId)
+                        .then(() => Swal.fire('Submitted', 'Damage reported. Received quantities were updated.', 'success'))
+                        .catch(() => Swal.fire('Submitted', 'Damage reported, but the checklist could not refresh. Please reopen the delivery.', 'warning'));
+                } else {
+                    Swal.fire('Submitted', 'Your report is pending staff review.', 'success').then(() => window.location.reload());
+                }
             } else {
                 Swal.fire('Error', data.error || 'Submit failed', 'error');
             }
@@ -1302,14 +1464,21 @@ function buildDeliveryDetailsPayload() {
         const ddId = item.delivery_detail_id;
         if (!ddId) return;
         const received = document.querySelector(`input[name="received_${i}"]`);
-        let receivedQty = parseFloat(received?.value || 0) || 0;
+        const orderedQty = parseFloat(item.ordered_qty) || 0;
+        const reportedDamage = parseFloat(item.reported_damage_qty) || 0;
+        let receivedQty = parseFloat(received?.value);
+        if (Number.isNaN(receivedQty)) {
+            receivedQty = deriveItemReceivedQty(item);
+        }
         if (receivedQty < 0) receivedQty = 0;
+        const maxReceivable = Math.max(0, orderedQty - reportedDamage);
+        if (receivedQty > maxReceivable) receivedQty = maxReceivable;
         details.push({
             delivery_detail_id: ddId,
             received_qty: receivedQty,
-            damage_qty: 0,
-            remarks: '',
-            ordered_qty: parseFloat(item.ordered_qty) || receivedQty
+            damage_qty: reportedDamage,
+            remarks: reportedDamage > 0 ? 'Damage reported via delivery damage workflow' : '',
+            ordered_qty: orderedQty
         });
     });
     return details;
@@ -1360,8 +1529,9 @@ document.getElementById('btnConfirmDelivery').addEventListener('click', () => {
 
 function doConfirmDelivery(deliveredTo, amountToCollect) {
     const formData = new FormData();
-    if (window.csrfToken) {
-        formData.append('csrf_token', window.csrfToken);
+    var confirmCsrf = getRiderCsrfToken();
+    if (confirmCsrf) {
+        formData.append('csrf_token', confirmCsrf);
     }
     formData.append('action', 'confirm_delivery');
     formData.append('delivery_id', currentDeliveryId);
@@ -1390,7 +1560,7 @@ function doConfirmDelivery(deliveredTo, amountToCollect) {
                 Swal.fire('Success', 'Delivery confirmed! Collected: \u20B1' + (data.total_amount || 0).toLocaleString('en-PH', {minimumFractionDigits: 0}), 'success')
                     .then(() => location.reload());
             } else {
-                Swal.fire('Error', data.message || 'Failed to confirm', 'error');
+                Swal.fire('Error', riderApiErrorMessage(data, 'Failed to confirm'), 'error');
             }
         })
         .catch(() => Swal.fire('Error', 'Network error', 'error'));
@@ -1607,8 +1777,9 @@ function sendOnTheWaySms(deliveryId, customerName, customerPhone) {
         if (!res.isConfirmed) return;
 
         const formData = new FormData();
-        if (window.csrfToken) {
-            formData.append('csrf_token', window.csrfToken);
+        var smsCsrf = getRiderCsrfToken();
+        if (smsCsrf) {
+            formData.append('csrf_token', smsCsrf);
         }
         formData.append('action', 'send_on_the_way_sms');
         formData.append('delivery_id', deliveryId);
@@ -2198,7 +2369,8 @@ function promptCancelDelivery(deliveryId) {
     }).then((res) => {
         if (res.isConfirmed) {
             const formData = new FormData();
-            if (window.csrfToken) formData.append('csrf_token', window.csrfToken);
+            var cancelCsrf = getRiderCsrfToken();
+            if (cancelCsrf) formData.append('csrf_token', cancelCsrf);
             formData.append('action', 'cancel_delivery');
             formData.append('delivery_id', deliveryId);
             formData.append('reason', res.value.reason);
@@ -2211,7 +2383,7 @@ function promptCancelDelivery(deliveryId) {
                     if (data.success) {
                         Swal.fire('Returning', data.message, 'success').then(() => refreshQueueAjax(false));
                     } else {
-                        Swal.fire('Error', data.message || 'Failed to cancel', 'error');
+                        Swal.fire('Error', riderApiErrorMessage(data, 'Failed to cancel'), 'error');
                     }
                 })
                 .catch(() => Swal.fire('Error', 'Network error', 'error'));
@@ -2261,7 +2433,8 @@ function acknowledgeReturnToStore(deliveryId) {
         if (!res.isConfirmed) return;
 
         const formData = new FormData();
-        if (window.csrfToken) formData.append('csrf_token', window.csrfToken);
+        var returnCsrf = getRiderCsrfToken();
+        if (returnCsrf) formData.append('csrf_token', returnCsrf);
         formData.append('action', 'acknowledge_return_to_store');
         formData.append('delivery_id', deliveryId);
 

@@ -4,9 +4,6 @@
  * Handles: confirm_delivery (COD + details), get_collections, activity logging
  * Access: Delivery Rider (from roles table)
  */
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
 require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/mailer.php';
@@ -44,14 +41,13 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $state_changing_actions = ['confirm_delivery', 'send_on_the_way_email', 'send_on_the_way_sms', 'cancel_delivery', 'acknowledge_return_to_store', 'rider_set_available'];
     if (in_array($action, $state_changing_actions, true)) {
-        // Debug logging for CSRF issues
-        $received_token = $_POST['csrf_token'] ?? 'NOT_PROVIDED';
-        $session_token = $_SESSION['csrf_token'] ?? 'NOT_SET';
-        error_log("CSRF Debug - Action: {$action}, Received: {$received_token}, Session: {$session_token}");
-        
         if (!validateCsrfToken(false)) {
             http_response_code(403);
-            echo json_encode(['success' => false, 'message' => 'Invalid or expired security token. Please refresh the page.']);
+            echo json_encode([
+                'success' => false,
+                'message' => 'Invalid or expired security token. Please refresh the page.',
+                'csrf_token' => getCsrfToken(),
+            ]);
             exit();
         }
     }
@@ -423,11 +419,34 @@ function cancelDelivery($conn, $user_id, $order_status_col) {
                                          ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()");
             $availStmt->execute([$user_id]);
 
+            // Also flag all other active deliveries for this rider as Returning + Vehicle issue
+            $other_stmt = $conn->prepare("SELECT Delivery_ID, Order_ID FROM delivery 
+                WHERE Delivery_ID != ? AND assigned_rider_id = ? 
+                AND delivery_status NOT IN ('Completed', 'Cancelled', 'Delivered')");
+            $other_stmt->execute([$delivery_id, $user_id]);
+            $other_count = 0;
+            while ($other = $other_stmt->fetch(PDO::FETCH_ASSOC)) {
+                $other_dlv_id = (int)$other['Delivery_ID'];
+                $other_ord_id = (int)$other['Order_ID'];
+                $other_count++;
+                $conn->prepare("UPDATE delivery SET delivery_status = 'Returning', cancellation_reason = 'Vehicle issue', cancellation_remarks = CONCAT('Auto-flagged due to vehicle issue on Delivery #', ?), updated_at = NOW() WHERE Delivery_ID = ?")
+                    ->execute([$delivery_id, $other_dlv_id]);
+                if ($other_ord_id > 0) {
+                    $new_order_status = getValidOrderStatus($conn, 'Confirmed', ['Confirmed', 'Requested']);
+                    $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")
+                        ->execute([$new_order_status, $other_ord_id]);
+                }
+                logActivity($conn, $user_id, "Auto-flagged Delivery #{$other_dlv_id}, Order #{$other_ord_id} as Returning due to Vehicle issue reported on Delivery #{$delivery_id}.");
+            }
+
             // Notify all manager/owner users so they can reassign
             require_once __DIR__ . '/../includes/roles_helper.php';
             $managerRoleIds = getDashboardRoleIds($conn);
             $riderName = trim($_SESSION['full_name'] ?? $_SESSION['user_name'] ?? 'Rider');
             $notifMsg = "{$riderName} reported Vehicle issue on Delivery #{$delivery_id}, Order #{$order_id}. Needs rider transfer.";
+            if ($other_count > 0) {
+                $notifMsg .= " Also auto-flagged {$other_count} other delivery/deliveries.";
+            }
             if (!empty($managerRoleIds)) {
                 $placeholders = implode(',', array_fill(0, count($managerRoleIds), '?'));
                 $userStmt = $conn->prepare("SELECT User_ID FROM user WHERE Role_ID IN ($placeholders) AND is_active = 1");

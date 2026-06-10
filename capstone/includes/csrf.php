@@ -11,9 +11,8 @@
  *   2. Validate on POST: validateCsrfToken() or requireCsrfToken()
  */
 
-if (session_status() === PHP_SESSION_NONE && !headers_sent()) {
-    session_start();
-}
+// Do not start the session here — auth.php configures cookie params first.
+// csrf.php is safe to include after auth/session bootstrap.
 
 if (!defined('CSRF_GRACE_WINDOW')) {
     define('CSRF_GRACE_WINDOW', 600); // 10 minutes
@@ -85,6 +84,19 @@ if (!function_exists('csrfTokenField')) {
 }
 
 /**
+ * Meta tag + window.csrfToken bootstrap for pages and fetch/AJAX callers.
+ */
+if (!function_exists('csrfBootstrapTags')) {
+    function csrfBootstrapTags(): string {
+        $token = getCsrfToken();
+        $safe = htmlspecialchars($token, ENT_QUOTES, 'UTF-8');
+        $json = json_encode($token, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+        return '<meta name="csrf-token" content="' . $safe . '">' . "\n"
+            . '<script>window.csrfToken=' . $json . ';</script>';
+    }
+}
+
+/**
  * Validate CSRF token from request
  * @param bool $regenerate Whether to regenerate token after validation
  * @return bool True if valid, false otherwise
@@ -138,6 +150,12 @@ if (!function_exists('validateCsrfToken')) {
         $is_current_match = (!empty($stored_token) && hash_equals($stored_token, $token));
         $is_prev_match = (!empty($prev_token) && hash_equals($prev_token, $token));
         $valid = false;
+
+        // Repair legacy sessions that have a token but no timestamp.
+        if ($is_current_match && $token_time <= 0) {
+            $_SESSION['csrf_token_time'] = $now;
+            $token_time = $now;
+        }
 
         if ($is_current_match && $token_time > 0 && ($now - $token_time) <= $lifetime) {
             $valid = true;

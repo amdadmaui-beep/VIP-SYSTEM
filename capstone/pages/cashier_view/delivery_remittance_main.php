@@ -830,7 +830,7 @@
                             </div>
                             <div style="display: flex; align-items: center; gap: 1rem;">
                                 <div style="text-align: right;">
-                                    <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Expected</div>
+                                    <div style="font-size: 0.7rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Amount to Collect</div>
                                     <div style="font-weight: 700; font-size: 0.95rem; color: var(--accent-blue);">₱${deliveryCollectible.toFixed(2)}</div>
                                 </div>
                                 <span id="chevron-${delivery.Delivery_ID}" style="color: var(--text-muted); font-size: 0.9rem; transition: transform 0.2s ease;">
@@ -873,7 +873,7 @@
                                         <span>-₱${deliveryDamaged.toFixed(2)}</span>
                                     </div>
                                     <div style="display: flex; justify-content: space-between; font-size: 0.9rem; font-weight: 700; color: var(--text-primary); border-top: 1px dashed #e2e8f0; padding-top: 0.5rem; margin-top: 0.25rem;">
-                                        <span>${delivery.is_ar ? 'Expected (AR)' : 'Expected remittance'}</span>
+                                        <span>${delivery.is_ar ? 'AR Receivable' : 'Expected remittance'}</span>
                                         <span style="color: var(--accent-blue);">₱${deliveryCollectible.toFixed(2)}</span>
                                     </div>
                                 </div>

@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/product_form_categories.php';
 
 // Accessible to Owner (1) and Manager (2, 4)
 requireRole([1, 2, 4]);
@@ -44,6 +45,9 @@ if ($units_result) {
     }
 }
 
+$has_category_column = productsTableHasCategoryId($conn);
+$categories = $has_category_column ? fetchAssignableProductCategories($conn) : [];
+
 $success = $_SESSION['products_edit_success'] ?? null;
 unset($_SESSION['products_edit_success']);
 
@@ -60,6 +64,7 @@ if (isset($_GET['success']) && $_GET['success'] == '1') {
 if (!empty($old_input)) {
     $product['product_name'] = $old_input['product_name'] ?? $product['product_name'];
     $product['unit_id'] = $old_input['unit_id'] ?? $product['unit_id'];
+    $product['category_id'] = $old_input['category_id'] ?? $product['category_id'];
     $product['wholesale_price'] = $old_input['wholesale_price'] ?? $product['wholesale_price'];
     $product['retail_price'] = $old_input['retail_price'] ?? $product['retail_price'];
     $product['description'] = $old_input['description'] ?? $product['description'];
@@ -77,6 +82,7 @@ $product_image_url = $product['product_image'] ? '../uploads/products/' . htmlsp
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $product_name = trim($_POST['product_name']);
     $unit_id = intval($_POST['unit_id']);
+    $category_id = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
     $wholesale_price = floatval($_POST['wholesale_price']);
     $retail_price = floatval($_POST['retail_price']);
     $storage_limit = floatval($_POST['storage_limit'] ?? 0);
@@ -117,10 +123,14 @@ $pending_image = null;
         }
     }
 
-    // Basic validation
-    $errors = [];
     if (empty($product_name)) $errors[] = "Product name is required.";
     if ($unit_id <= 0) $errors[] = "Unit is required.";
+    if ($has_category_column) {
+        $category_error = validateProductCategoryId($conn, $category_id);
+        if ($category_error !== null) {
+            $errors[] = $category_error;
+        }
+    }
     if ($wholesale_price <= 0) $errors[] = "Wholesale price must be greater than 0.";
     if ($retail_price <= 0) $errors[] = "Retail price must be greater than 0.";
     if ($storage_limit <= 0) $errors[] = "Storage limit must be greater than 0.";
@@ -143,9 +153,15 @@ $pending_image = null;
 
     if (empty($errors)) {
         $new_image = $pending_image ? $pending_image : ($remove_image ? null : $product_image);
-        $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
+        if ($has_category_column) {
+            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, category_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
+            $update_params = [$product_name, $unit_id, $category_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id];
+        } else {
+            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
+            $update_params = [$product_name, $unit_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id];
+        }
         $update_stmt = $conn->prepare($update_sql);
-        if ($update_stmt->execute([$product_name, $unit_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id])) {
+        if ($update_stmt->execute($update_params)) {
             require_once __DIR__ . '/../../includes/product_cache.php';
             clearProductCache();
             // Delete old file only after successful DB update
@@ -431,13 +447,15 @@ $pending_image = null;
 input:checked + .slider { background-color: #6366f1; }
 input:checked + .slider:before { transform: translateX(22px); }
 .status-label { display: flex; align-items: center; justify-content: space-between; font-weight: 600; color: #475569; padding: 0.5rem 0; }
-.price-input-wrapper { position: relative; }
-.price-input-wrapper .currency-symbol { position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; font-weight: 600; z-index: 1; }
-.price-input-wrapper input { padding-left: 2.5rem; }
+.price-input-wrapper input { width: 100%; }
 .btn-action-primary { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); color: white; border: none; padding: 1rem; border-radius: 12px; font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 0.5rem; box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3); width: 100%; }
 .btn-action-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(99, 102, 241, 0.4); background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); }
 .btn-action-secondary { background: white; color: #475569; border: 2px solid #e2e8f0; padding: 1rem; border-radius: 12px; font-size: 1.05rem; font-weight: 600; cursor: pointer; transition: all 0.3s ease; display: flex; align-items: center; justify-content: center; gap: 0.5rem; text-decoration: none; width: 100%; }
 .btn-action-secondary:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; transform: translateY(-2px); }
+.category-picker-empty { padding: 1.25rem; border-radius: 12px; background: #fffbeb; border: 1px dashed #fcd34d; color: #92400e; font-size: 0.9rem; text-align: center; }
+.category-picker-empty i { display: block; font-size: 1.5rem; margin-bottom: 0.5rem; }
+.category-picker-empty a { color: #4f46e5; font-weight: 600; }
+.category-migration-note { padding: 1rem 1.25rem; border-radius: 12px; background: #eff6ff; border: 1px solid #bfdbfe; color: #1e40af; font-size: 0.875rem; }
 
 .current-image-wrapper { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; text-align: center; }
 .current-image-wrapper img { max-width: 150px; max-height: 150px; border-radius: 8px; object-fit: cover; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin: 0 auto; display: block; }
@@ -470,6 +488,18 @@ input:checked + .slider:before { transform: translateX(22px); }
                                 </select>
                             </div>
                             
+                            <?php if ($has_category_column): ?>
+                            <div class="form-group" style="margin-bottom: 1.5rem;">
+                                <label for="category_id">Category *</label>
+                                <?php renderProductCategoryPicker($categories, (int)($product['category_id'] ?? 0)); ?>
+                            </div>
+                            <?php else: ?>
+                            <div class="category-migration-note" style="margin-bottom: 1.5rem;">
+                                <i class="fas fa-info-circle"></i>
+                                Product categories are not enabled on this database yet. Run the product categories migration to assign categories.
+                            </div>
+                            <?php endif; ?>
+
                             <div class="form-group">
                                 <label for="description">Description</label>
                                 <textarea id="description" name="description" class="form-input" rows="4" placeholder="Enter detailed product description here..."><?php echo htmlspecialchars($product['description']); ?></textarea>
@@ -484,15 +514,13 @@ input:checked + .slider:before { transform: translateX(22px); }
                                 <div class="form-group">
                                     <label for="wholesale_price">Wholesale Price *</label>
                                     <div class="price-input-wrapper">
-                                        <span class="currency-symbol">?</span>
-                                        <input type="number" id="wholesale_price" name="wholesale_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['wholesale_price']); ?>">
+                                        <input type="number" id="wholesale_price" name="wholesale_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['wholesale_price']); ?>" placeholder="0.00">
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <label for="retail_price">Retail Price *</label>
                                     <div class="price-input-wrapper">
-                                        <span class="currency-symbol">?</span>
-                                        <input type="number" id="retail_price" name="retail_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['retail_price']); ?>">
+                                        <input type="number" id="retail_price" name="retail_price" class="form-input" step="0.01" min="0" required value="<?php echo htmlspecialchars($product['retail_price']); ?>" placeholder="0.00">
                                     </div>
                                 </div>
                             </div>
@@ -578,6 +606,7 @@ input:checked + .slider:before { transform: translateX(22px); }
                 document.getElementById('imagePreview').style.display = 'none';
                 document.getElementById('preview').src = '#';
             }
+
             </script>
         </div>
     </main>

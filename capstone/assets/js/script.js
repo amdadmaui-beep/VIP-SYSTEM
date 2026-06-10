@@ -22,9 +22,12 @@ document.addEventListener('DOMContentLoaded', function () {
         var heartbeat = function () {
             var fd = new FormData();
             // Best-effort CSRF if available on page
-            var meta = document.querySelector('meta[name="csrf-token"]');
-            if (meta && meta.content) {
-                fd.append('csrf_token', meta.content);
+            var token = (typeof window.csrfToken === 'string' && window.csrfToken)
+                || (document.querySelector('meta[name="csrf-token"]') || {}).content
+                || (document.querySelector('input[name="csrf_token"]') || {}).value
+                || '';
+            if (token) {
+                fd.append('csrf_token', token);
             }
             fd.append('path', (location.pathname + location.search + location.hash).slice(0, 255));
             fetch((location.pathname.includes('/pages/') ? '../api/session_heartbeat.php' : 'api/session_heartbeat.php'), {

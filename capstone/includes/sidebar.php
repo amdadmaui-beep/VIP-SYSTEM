@@ -10,6 +10,7 @@ if (!function_exists('renderSidebar')) {
             require_once __DIR__ . '/roles_helper.php';
         }
         require_once __DIR__ . '/delivery_damage_ui_helper.php';
+        require_once __DIR__ . '/manager_notifications.php';
 
         $ddrPendingBadge = countPendingDeliveryDamageReports($conn);
         $showDeliveryDamageQueue = ddr_table_exists($conn)
@@ -58,6 +59,8 @@ if (!function_exists('renderSidebar')) {
         $isActive = static function (string $key) use ($active): string {
             return $active === $key ? ' active' : '';
         };
+
+        $hideMgrNotifications = !empty($opts['hide_mgr_notifications']);
         ?>
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -106,6 +109,10 @@ if (!function_exists('renderSidebar')) {
                     <a href="<?= $base ?>pages/stock_ledger.php" class="menu-item<?= $isActive('stock_ledger') ?>">
                         <i class="fas fa-file-invoice"></i>
                         <span>Stock Ledger</span>
+                    </a>
+                    <a href="<?= $base ?>pages/categories.php" class="menu-item<?= $isActive('categories') ?>">
+                        <i class="fas fa-tags"></i>
+                        <span>Categories</span>
                     </a>
                     <a href="<?= $base ?>pages/users.php" class="menu-item<?= $isActive('customers') ?>">
                         <i class="fas fa-users"></i>
@@ -162,6 +169,9 @@ if (!function_exists('renderSidebar')) {
             </nav>
         </aside>
         <?php
+        if (!$hideMgrNotifications) {
+            renderManagerNotificationWidget($conn, $base);
+        }
     }
 }
 

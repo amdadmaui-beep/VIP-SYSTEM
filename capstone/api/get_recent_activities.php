@@ -6,11 +6,11 @@ require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/roles_helper.php';
 
-// Accessible to Owner (1), Manager (2), Inventory Staff, and Delivery Riders
-$management_roles = [1, 2];
+// Accessible to management, inventory staff, and delivery riders (role IDs from DB)
+$management_roles = getManagementRoleIds($conn);
 $staff_roles = getInventoryStaffRoleIds($conn);
 $rider_roles = getRiderRoleIds($conn);
-$allowed_roles = array_unique(array_merge($management_roles, $staff_roles, $rider_roles));
+$allowed_roles = array_values(array_unique(array_merge($management_roles, $staff_roles, $rider_roles)));
 
 if (!isset($_SESSION['user_role']) || !in_array((int)$_SESSION['user_role'], $allowed_roles, true)) {
     http_response_code(403);
@@ -25,7 +25,7 @@ if (!isset($_SESSION['user_role']) || !in_array((int)$_SESSION['user_role'], $al
 
 $last_id = isset($_GET['last_id']) ? max(0, (int)$_GET['last_id']) : 0;
 $filter = isset($_GET['filter']) ? trim($_GET['filter']) : null;
-$limit = 10;
+$limit = isset($_GET['limit']) ? max(1, min(50, (int)$_GET['limit'])) : 10;
 
 try {
     // Resolve PK for activity_logs dynamically.
@@ -203,10 +203,21 @@ try {
         $logs = array_reverse($logs);
     }
 
+    $max_log_id = 0;
+    try {
+        $maxStmt = $conn->query("SELECT MAX($pk) FROM activity_logs");
+        if ($maxStmt) {
+            $max_log_id = (int)$maxStmt->fetchColumn();
+        }
+    } catch (Throwable $ignored) {
+        $max_log_id = 0;
+    }
+
     echo json_encode([
         'status' => 'success',
         'logs' => $logs,
         'pk' => $pk,
+        'max_log_id' => $max_log_id,
     ]);
 } catch (Throwable $e) {
     http_response_code(500);

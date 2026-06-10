@@ -67,6 +67,22 @@ function getAlreadyReportedQty(PDO $conn, int $orderDetailId): float {
     return (float) $stmt->fetchColumn();
 }
 
+function getAlreadyReportedQtyForDelivery(PDO $conn, int $deliveryId, int $orderDetailId): float {
+    if ($deliveryId <= 0 || $orderDetailId <= 0) {
+        return 0.0;
+    }
+    $stmt = $conn->prepare(
+        "SELECT COALESCE(SUM(r.damaged_qty), 0)
+         FROM delivery_damage_report r
+         LEFT JOIN damage_report_reviews rev ON rev.report_id = r.report_id
+         WHERE r.Delivery_ID = ?
+           AND r.Order_detail_ID = ?
+           AND COALESCE(rev.status, 'pending_review') IN ('pending_review', 'approved')"
+    );
+    $stmt->execute([$deliveryId, $orderDetailId]);
+    return (float) $stmt->fetchColumn();
+}
+
 function wholeQty($value): int {
     return (int) round((float) $value);
 }
@@ -205,7 +221,7 @@ if ($method === 'GET') {
         $items->execute([$orderId]);
         $rows = $items->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$r) {
-            $r['already_reported'] = wholeQty(getAlreadyReportedQty($conn, (int)$r['Order_detail_ID']));
+            $r['already_reported'] = wholeQty(getAlreadyReportedQtyForDelivery($conn, $deliveryId, (int)$r['Order_detail_ID']));
             $r['ordered_qty'] = wholeQty($r['ordered_qty'] ?? 0);
             $r['remaining_qty'] = max(0, $r['ordered_qty'] - $r['already_reported']);
         }
@@ -303,7 +319,7 @@ if ($action === 'submit') {
     }
 
     $orderedQty = wholeQty($line['ordered_qty'] ?? 0);
-    $already = wholeQty(getAlreadyReportedQty($conn, $orderDetailId));
+    $already = wholeQty(getAlreadyReportedQtyForDelivery($conn, $deliveryId, $orderDetailId));
     if ($damagedQty + $already > $orderedQty) {
         jsonOut([
             'success' => false,

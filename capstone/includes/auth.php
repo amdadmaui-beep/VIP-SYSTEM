@@ -54,6 +54,9 @@ function initApiErrorHandling(): void {
             echo json_encode(['success' => false, 'error' => 'Server error']);
         } else {
             http_response_code(500);
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
             $errorFile = __DIR__ . '/../500.html';
             if (file_exists($errorFile)) {
                 readfile($errorFile);

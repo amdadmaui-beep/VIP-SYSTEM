@@ -92,11 +92,40 @@ try {
     }
 
     $del_addr = '';
-    $dq = $conn->prepare('SELECT delivery_address FROM delivery WHERE Order_ID = ? ORDER BY Delivery_ID DESC LIMIT 1');
+    $delivery_rider = '';
+    require_once __DIR__ . '/../includes/rider_availability_helper.php';
+    $deliverySelect = ['delivery_address', 'delivered_by'];
+    if (riderWorkflowHasColumn($conn, 'delivery', 'assigned_rider_id')) {
+        $deliverySelect[] = 'assigned_rider_id';
+    } elseif (riderWorkflowHasColumn($conn, 'delivery', 'delivered_by_user_id')) {
+        $deliverySelect[] = 'delivered_by_user_id';
+    }
+    $dq = $conn->prepare(
+        'SELECT ' . implode(', ', $deliverySelect) . ' FROM delivery WHERE Order_ID = ? ORDER BY Delivery_ID DESC LIMIT 1'
+    );
     $dq->execute([$order_id]);
     $drow = $dq->fetch(PDO::FETCH_ASSOC);
-    if ($drow && !empty(trim((string)($drow['delivery_address'] ?? '')))) {
-        $del_addr = trim($drow['delivery_address']);
+    if ($drow) {
+        if (!empty(trim((string)($drow['delivery_address'] ?? '')))) {
+            $del_addr = trim($drow['delivery_address']);
+        }
+        if (!empty($drow['delivered_by'])) {
+            $delivery_rider = trim((string)$drow['delivered_by']);
+        } elseif (!empty($drow['assigned_rider_id'])) {
+            $rider_stmt = $conn->prepare('SELECT full_name, user_name FROM user WHERE User_ID = ?');
+            $rider_stmt->execute([(int)$drow['assigned_rider_id']]);
+            $rider_row = $rider_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($rider_row) {
+                $delivery_rider = $rider_row['full_name'] ?? $rider_row['user_name'] ?? '';
+            }
+        } elseif (!empty($drow['delivered_by_user_id'])) {
+            $rider_stmt = $conn->prepare('SELECT full_name, user_name FROM user WHERE User_ID = ?');
+            $rider_stmt->execute([(int)$drow['delivered_by_user_id']]);
+            $rider_row = $rider_stmt->fetch(PDO::FETCH_ASSOC);
+            if ($rider_row) {
+                $delivery_rider = $rider_row['full_name'] ?? $rider_row['user_name'] ?? '';
+            }
+        }
     }
     $oaddr = trim((string)($order['delivery_address'] ?? ''));
     $caddr = trim((string)($order['customer_address'] ?? ''));
@@ -189,6 +218,7 @@ try {
         'order_status' => $order['order_status'],
         'cancellation_reason' => (string)($order['cancellation_reason'] ?? ''),
         'cancellation_remarks' => (string)($order['cancellation_remarks'] ?? ''),
+        'delivery_rider' => $delivery_rider,
         'customer_name' => $order['customer_name'] ?? '',
         'phone_number' => $order['phone_number'] ?? '',
         'delivery_address' => $delivery_address_display,

@@ -77,6 +77,10 @@ function inv_chrome_render_header_main(array $c): void
     $profilePicture = (string)($c['profile_picture'] ?? '');
     $hasProfilePic = $profilePicture !== '' && file_exists(dirname(__DIR__) . '/' . $profilePicture);
     $profilePicSrc = $hasProfilePic ? '../' . $profilePicture . '?v=' . time() : '';
+    $total_notifications_n = (int)($c['total_notifications_n'] ?? 0);
+    $inv_user_id = (int)($_SESSION['user_id'] ?? 0);
+    $inv_last_seen_log_id = (int)($_SESSION['last_seen_log_id'] ?? 0);
+    $badge_label = $total_notifications_n > 99 ? '99+' : (string)$total_notifications_n;
 
     ?>
     <div class="flex justify-between items-center mb-4 gap-2">
@@ -100,14 +104,10 @@ function inv_chrome_render_header_main(array $c): void
             </div>
         </div>
         <div class="flex items-center gap-2 shrink-0">
-            <div class="inv-bell-wrap relative">
-                <button type="button" class="inv-bell-btn group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2" aria-expanded="false" aria-haspopup="true" aria-controls="invStaffBellPanel" title="Notifications">
+            <div class="inv-bell-wrap relative" id="invStaffNotifRoot" data-user-id="<?php echo $inv_user_id; ?>" data-unread-count="<?php echo $total_notifications_n; ?>" data-last-seen-id="<?php echo $inv_last_seen_log_id; ?>">
+                <button type="button" id="invStaffNotifToggle" class="inv-bell-btn group relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 focus-visible:ring-offset-2" aria-expanded="false" aria-haspopup="true" aria-controls="invStaffBellPanel" title="Notifications">
                     <i class="fas fa-bell inv-bell-icon text-lg text-slate-500 group-hover:text-slate-600" aria-hidden="true"></i>
-                    <?php
-                    $total_notifications_n = (int)($c['total_notifications_n'] ?? $ddr_pending_n);
-                    if ($total_notifications_n > 0): ?>
-                    <span class="pointer-events-none absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-black leading-none text-white shadow-sm ring-2 ring-white"><?php echo $total_notifications_n > 99 ? '99+' : $total_notifications_n; ?></span>
-                    <?php endif; ?>
+                    <span id="invStaffNotifBadge" class="pointer-events-none absolute -top-1 -right-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-black leading-none text-white shadow-sm ring-2 ring-white<?php echo $total_notifications_n > 0 ? '' : ' hidden'; ?>"><?php echo htmlspecialchars($badge_label, ENT_QUOTES, 'UTF-8'); ?></span>
                 </button>
                 <div id="invStaffBellPanel" class="inv-bell-dd-panel z-[80] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl shadow-slate-200/80" role="region" aria-label="Notifications panel">
                     <div class="border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-4 py-3">

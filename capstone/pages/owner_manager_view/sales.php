@@ -1,5 +1,6 @@
 <?php
 session_start();
+ob_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/roles_helper.php';
@@ -70,100 +71,139 @@ if (in_array('created_by', $sales_cols, true)) {
 $recorded_by_select = $sales_user_col ? "u.user_name as recorded_by, s.$sales_user_col as cashier_user_id," : "'N/A' as recorded_by, NULL as cashier_user_id,";
 $recorded_by_join = $sales_user_col ? "LEFT JOIN user u ON u.User_ID = s.$sales_user_col" : "";
 
-// ── Fetch all cashiers who have recorded at least one sale (for the filter) ──
-$cashier_filter_list = [];
-if ($sales_user_col) {
-    $cashier_list_sql = "SELECT DISTINCT u.User_ID, u.user_name
-        FROM sales s
-        INNER JOIN user u ON u.User_ID = s.$sales_user_col
-        WHERE u.Role_ID = 3
-        ORDER BY u.user_name";
-    $cl_res = $conn->query($cashier_list_sql);
-    if ($cl_res) {
-        $cashier_filter_list = $cl_res->fetchAll(PDO::FETCH_ASSOC);
-    }
-}
-
-// ── Selected cashier filter from GET ──────────────────────────────────────
+// ── Selected filters from GET ─────────────────────────────────────────────
 $filter_cashier_id = intval($_GET['cashier_id'] ?? 0);
+$filter_date = $_GET['filter_date'] ?? '';
 $cashier_where = '';
 if ($filter_cashier_id > 0 && $sales_user_col) {
     $cashier_where = " AND s.$sales_user_col = " . $filter_cashier_id;
 }
-
-// ── Selected date filter from GET ─────────────────────────────────────────
-$filter_date = $_GET['filter_date'] ?? '';
 $date_where = '';
 if (!empty($filter_date)) {
     $date_where = " AND DATE(s.created_at) = " . $conn->quote($filter_date);
 }
 
+// ── Fetch cashiers & managers with sale stats (for card filter) ──
+$cashier_filter_list = [];
+$cashier_stats_all = ['sale_count' => 0, 'total_revenue' => 0];
+if ($sales_user_col) {
+    $cashier_date_clause = '';
+    if (!empty($filter_date)) {
+        $cashier_date_clause = ' AND DATE(s.created_at) = ' . $conn->quote($filter_date);
+    }
+    $recorder_role_ids = array_values(array_unique(array_merge(
+        getCashierRoleIds($conn),
+        getManagerRoleIds($conn)
+    )));
+    if (empty($recorder_role_ids)) {
+        $recorder_role_ids = [3];
+    }
+    $recorder_role_in = implode(',', array_map('intval', $recorder_role_ids));
+    $cashier_list_sql = "SELECT u.User_ID, u.user_name, r.role_name,
+            COUNT(DISTINCT s.Sale_ID) AS sale_count,
+            COALESCE(SUM(sd.subtotal), 0) AS total_revenue
+        FROM sales s
+        INNER JOIN user u ON u.User_ID = s.$sales_user_col
+        LEFT JOIN roles r ON r.Role_ID = u.Role_ID
+        LEFT JOIN sale_details sd ON sd.Sale_ID = s.Sale_ID
+        WHERE u.Role_ID IN ($recorder_role_in) $cashier_date_clause
+        GROUP BY u.User_ID, u.user_name, r.role_name
+        ORDER BY u.user_name";
+    $cl_res = $conn->query($cashier_list_sql);
+    if ($cl_res) {
+        $cashier_filter_list = $cl_res->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($cashier_filter_list as $cf) {
+            $cashier_stats_all['sale_count'] += (int)($cf['sale_count'] ?? 0);
+            $cashier_stats_all['total_revenue'] += (float)($cf['total_revenue'] ?? 0);
+        }
+    }
+}
+
 // ── Pagination settings ─────────────────────────────────────────────────────
 $sales_per_page = 20;
 $sales_page = max(1, intval($_GET['sales_page'] ?? 1));
-$sales_offset = ($sales_page - 1) * $sales_per_page;
+$sales_query_error = null;
+$sales_total_items = 0;
+$sales_total_pages = 1;
+$sales_by_cashier = [];
+
+if (!function_exists('formatSaleDate')) {
+    function formatSaleDate(?string $datetime): string {
+        if (empty($datetime)) {
+            return '—';
+        }
+        $ts = strtotime($datetime);
+        return ($ts !== false) ? date('M d, Y H:i', $ts) : '—';
+    }
+}
 
 // Fetch sales history
 $status_select = $has_status_col ? "s.status," : "'Completed' as status,";
 $status_group_by = $has_status_col ? ", s.status" : "";
-$sales_query = "SELECT 
-                    s.Sale_ID, 
-                    s.created_at, 
-                    $status_select
-                    $recorded_by_select
-                    d.Delivery_ID, 
-                    d.delivered_to, 
-                    o.Order_ID,
-                    COALESCE(c.customer_name, d.delivered_to) as customer_display,
-                    ss.Delivery_ID as has_delivery,
-                    (SELECT COALESCE(ar2.amount_due, 0) FROM account_receivable ar2 WHERE ar2.Sale_ID = s.Sale_ID LIMIT 1) as ar_balance_due,
-                    COALESCE(SUM(sd.quantity), 0) as total_qty,
-                    COALESCE(SUM(sd.subtotal), 0) as total_amount,
-                    COALESCE(
-                        GROUP_CONCAT(
-                            CONCAT(
-                                p.product_name,
-                                IF(u_units.unit_name IS NULL OR u_units.unit_name = '', '', CONCAT(' ', u_units.unit_name)),
-                                ' x', CAST(ROUND(sd.quantity, 0) AS UNSIGNED)
-                            )
-                            SEPARATOR ', '
-                        ),
-                        ''
-                    ) as items_sold
-                FROM sales s
-                $recorded_by_join
-                LEFT JOIN sale_source ss ON s.Sale_ID = ss.Sale_ID
-                LEFT JOIN delivery d ON ss.Delivery_ID = d.Delivery_ID
-                LEFT JOIN orders o ON d.Order_ID = o.Order_ID
-                LEFT JOIN customers c ON o.Customer_ID = c.Customer_ID
-                LEFT JOIN sale_details sd ON sd.Sale_ID = s.Sale_ID
-                LEFT JOIN products p ON p.Product_ID = sd.Product_ID
-                LEFT JOIN units u_units ON p.unit_id = u_units.unit_id
-                WHERE 1=1 $cashier_where $date_where
-                GROUP BY s.Sale_ID, s.created_at{$status_group_by}, recorded_by, cashier_user_id, d.Delivery_ID, d.delivered_to, o.Order_ID, c.customer_name, ss.Delivery_ID
-                ORDER BY recorded_by ASC, s.created_at DESC
-                LIMIT $sales_per_page OFFSET $sales_offset";
 
-// ── Get total sales count for pagination ────────────────────────────────────
 $count_query = "SELECT COUNT(DISTINCT s.Sale_ID) as total FROM sales s
                 $recorded_by_join
                 LEFT JOIN sale_source ss ON s.Sale_ID = ss.Sale_ID
                 LEFT JOIN delivery d ON ss.Delivery_ID = d.Delivery_ID
                 LEFT JOIN orders o ON d.Order_ID = o.Order_ID
                 WHERE 1=1 $cashier_where $date_where";
-$count_result = $conn->query($count_query);
-$sales_total_items = $count_result ? $count_result->fetch(PDO::FETCH_ASSOC)['total'] : 0;
-$sales_total_pages = max(1, ceil($sales_total_items / $sales_per_page));
 
-$sales_result = $conn->query($sales_query);
+try {
+    $count_result = $conn->query($count_query);
+    $sales_total_items = $count_result ? (int)($count_result->fetch(PDO::FETCH_ASSOC)['total'] ?? 0) : 0;
+    $sales_total_pages = max(1, (int)ceil($sales_total_items / $sales_per_page));
+    $sales_page = min(max(1, $sales_page), $sales_total_pages);
+    $sales_offset = ($sales_page - 1) * $sales_per_page;
 
-// ── Group sales rows by cashier ──────────────────────────────────────────
-$sales_by_cashier = []; // ['cashier_name' => [...rows]]
-if ($sales_result && $sales_result->rowCount() > 0) {
-    while ($row = $sales_result->fetch(PDO::FETCH_ASSOC)) {
-        $cname = $row['recorded_by'] ?? 'Unknown';
-        $sales_by_cashier[$cname][] = $row;
+    $sales_query = "SELECT 
+                        s.Sale_ID, 
+                        s.created_at, 
+                        $status_select
+                        $recorded_by_select
+                        d.Delivery_ID, 
+                        d.delivered_to, 
+                        o.Order_ID,
+                        COALESCE(c.customer_name, d.delivered_to) as customer_display,
+                        ss.Delivery_ID as has_delivery,
+                        (SELECT COALESCE(ar2.amount_due, 0) FROM account_receivable ar2 WHERE ar2.Sale_ID = s.Sale_ID LIMIT 1) as ar_balance_due,
+                        COALESCE(SUM(sd.quantity), 0) as total_qty,
+                        COALESCE(SUM(sd.subtotal), 0) as total_amount,
+                        COALESCE(
+                            GROUP_CONCAT(
+                                CONCAT(
+                                    p.product_name,
+                                    IF(u_units.unit_name IS NULL OR u_units.unit_name = '', '', CONCAT(' ', u_units.unit_name)),
+                                    ' x', CAST(ROUND(sd.quantity, 0) AS UNSIGNED)
+                                )
+                                SEPARATOR ', '
+                            ),
+                            ''
+                        ) as items_sold
+                    FROM sales s
+                    $recorded_by_join
+                    LEFT JOIN sale_source ss ON s.Sale_ID = ss.Sale_ID
+                    LEFT JOIN delivery d ON ss.Delivery_ID = d.Delivery_ID
+                    LEFT JOIN orders o ON d.Order_ID = o.Order_ID
+                    LEFT JOIN customers c ON o.Customer_ID = c.Customer_ID
+                    LEFT JOIN sale_details sd ON sd.Sale_ID = s.Sale_ID
+                    LEFT JOIN products p ON p.Product_ID = sd.Product_ID
+                    LEFT JOIN units u_units ON p.unit_id = u_units.unit_id
+                    WHERE 1=1 $cashier_where $date_where
+                    GROUP BY s.Sale_ID, s.created_at{$status_group_by}, recorded_by, cashier_user_id, d.Delivery_ID, d.delivered_to, o.Order_ID, c.customer_name, ss.Delivery_ID
+                    ORDER BY recorded_by ASC, s.created_at DESC
+                    LIMIT $sales_per_page OFFSET $sales_offset";
+
+    $sales_result = $conn->query($sales_query);
+    if ($sales_result && $sales_result->rowCount() > 0) {
+        while ($row = $sales_result->fetch(PDO::FETCH_ASSOC)) {
+            $cname = $row['recorded_by'] ?? 'Unknown';
+            $sales_by_cashier[$cname][] = $row;
+        }
     }
+} catch (Throwable $e) {
+    error_log('Sales history query failed: ' . $e->getMessage());
+    $sales_query_error = 'Unable to load sales history. Please try again or contact the administrator.';
+    $sales_by_cashier = [];
 }
 
 // Get sales statistics
@@ -192,8 +232,10 @@ $products_query = "SELECT p.Product_ID, p.product_name, u.unit_name, p.retail_pr
                    ORDER BY u.unit_name, p.product_name";
 $products_result = $conn->query($products_query);
 $products_data = [];
-while ($product = $products_result->fetch(PDO::FETCH_ASSOC)) {
-    $products_data[] = $product;
+if ($products_result) {
+    while ($product = $products_result->fetch(PDO::FETCH_ASSOC)) {
+        $products_data[] = $product;
+    }
 }
 // PDO doesn't support data_seek - products_data array is already populated
 
@@ -345,6 +387,147 @@ $customers_result = $conn->query($customers_query);
             font-size: 1.125rem;
             font-weight: 600;
         }
+
+        .sales-filter-toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+        .sales-date-filter {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+        .sales-date-filter label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #64748b;
+            margin: 0;
+        }
+        .cashier-cards-section {
+            margin-bottom: 1.5rem;
+        }
+        .cashier-cards-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: #64748b;
+            margin: 0 0 0.75rem 0;
+        }
+        .cashier-card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+        }
+        .cashier-card {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding: 1.125rem 1.25rem;
+            background: #ffffff;
+            border: 2px solid #e2e8f0;
+            border-radius: 16px;
+            text-decoration: none;
+            color: inherit;
+            transition: all 0.25s ease;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+            cursor: pointer;
+        }
+        .cashier-card:hover {
+            border-color: #a5b4fc;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px rgba(99, 102, 241, 0.15);
+        }
+        .cashier-card.is-active {
+            border-color: #6366f1;
+            background: linear-gradient(135deg, #f5f3ff 0%, #eef2ff 100%);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.2);
+        }
+        .cashier-card-top {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .cashier-card-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 1rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .cashier-card-avatar.all {
+            background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%);
+        }
+        .cashier-card-avatar.c0 { background: linear-gradient(135deg, #6366f1, #7c3aed); }
+        .cashier-card-avatar.c1 { background: linear-gradient(135deg, #0ea5e9, #0284c7); }
+        .cashier-card-avatar.c2 { background: linear-gradient(135deg, #10b981, #059669); }
+        .cashier-card-avatar.c3 { background: linear-gradient(135deg, #f59e0b, #d97706); }
+        .cashier-card-avatar.c4 { background: linear-gradient(135deg, #ec4899, #db2777); }
+        .cashier-card-avatar.c5 { background: linear-gradient(135deg, #8b5cf6, #6d28d9); }
+        .cashier-card-name {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: #1e293b;
+            line-height: 1.3;
+        }
+        .cashier-card-role {
+            font-size: 0.7rem;
+            color: #64748b;
+            font-weight: 500;
+        }
+        .cashier-card-stats {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.5rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid #e2e8f0;
+        }
+        .cashier-card.is-active .cashier-card-stats {
+            border-top-color: #c7d2fe;
+        }
+        .cashier-card-stat {
+            text-align: center;
+            flex: 1;
+        }
+        .cashier-card-stat span {
+            display: block;
+            font-size: 0.65rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #94a3b8;
+        }
+        .cashier-card-stat strong {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #1e293b;
+            margin-top: 0.15rem;
+        }
+        .cashier-card-stat strong.revenue {
+            color: #059669;
+        }
+        @media (max-width: 640px) {
+            .cashier-card-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        @media (max-width: 420px) {
+            .cashier-card-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
         .table {
             width: 100%;
             border-collapse: separate;
@@ -787,35 +970,118 @@ $customers_result = $conn->query($customers_query);
 
             <!-- Sales History (grouped by cashier for Owner/Manager) -->
             <div class="card">
-                <div class="card-header" style="flex-wrap:wrap; gap:1rem;">
+                <div class="card-header" style="flex-wrap:wrap; gap:1rem; border-bottom:none; margin-bottom:0; padding-bottom:0;">
                     <h3><i class="fas fa-history"></i> Sales History</h3>
-                    <?php if (!empty($cashier_filter_list)): ?>
-                    <form method="GET" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin:0;">
-                        <div style="display:flex; align-items:center; gap:0.5rem;">
-                            <label for="cashier_id" style="font-size:0.8rem; font-weight:600; color:#64748b; margin:0;">Filter by Cashier:</label>
-                            <select id="cashier_id" name="cashier_id" class="form-control" style="width:auto; min-width:160px; padding:0.375rem 0.75rem; font-size:0.875rem;" onchange="this.form.submit()">
-                                <option value="0">All Cashiers</option>
-                                <?php foreach ($cashier_filter_list as $cf): ?>
-                                <option value="<?= (int)$cf['User_ID'] ?>" <?= $filter_cashier_id === (int)$cf['User_ID'] ? 'selected' : '' ?>>
-                                    <?= htmlspecialchars($cf['user_name']) ?>
-                                </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        
-                        <div style="display:flex; align-items:center; gap:0.5rem;">
-                            <label for="filter_date" style="font-size:0.8rem; font-weight:600; color:#64748b; margin:0;">Filter by Date:</label>
-                            <input type="date" id="filter_date" name="filter_date" class="form-control" style="width:auto; padding:0.375rem 0.75rem; font-size:0.875rem; height: auto;" value="<?= htmlspecialchars($filter_date) ?>" onchange="this.form.submit()">
-                        </div>
+                </div>
 
+                <?php if (!empty($cashier_filter_list)): ?>
+                <div class="sales-filter-toolbar">
+                    <form method="GET" id="salesDateFilterForm" class="sales-date-filter">
+                        <?php if ($filter_cashier_id > 0): ?>
+                            <input type="hidden" name="cashier_id" value="<?= (int)$filter_cashier_id ?>">
+                        <?php endif; ?>
+                        <label for="filter_date"><i class="fas fa-calendar-alt"></i> Date</label>
+                        <input type="date" id="filter_date" name="filter_date" class="form-control" style="width:auto; padding:0.375rem 0.75rem; font-size:0.875rem; height:auto;" value="<?= htmlspecialchars($filter_date) ?>" onchange="this.form.submit()">
                         <?php if ($filter_cashier_id > 0 || !empty($filter_date)): ?>
-                            <a href="?" class="btn btn-secondary btn-sm" style="display: inline-flex; align-items: center; gap: 0.25rem;"><i class="fas fa-times"></i> Clear Filters</a>
+                            <a href="?" class="btn btn-secondary btn-sm" style="display:inline-flex; align-items:center; gap:0.25rem;"><i class="fas fa-times"></i> Clear</a>
                         <?php endif; ?>
                     </form>
-                    <?php endif; ?>
                 </div>
-                <div class="card-body" style="padding:0;">
-                    <?php if (!empty($sales_by_cashier)): ?>
+
+                <div class="cashier-cards-section">
+                    <p class="cashier-cards-label"><i class="fas fa-users"></i> Select a cashier or manager to view their sales</p>
+                    <div class="cashier-card-grid" id="cashierCardGrid">
+                        <?php
+                        $all_active = ($filter_cashier_id === 0);
+                        $all_href = '?' . http_build_query(array_filter([
+                            'filter_date' => $filter_date ?: null,
+                            'sales_page' => null,
+                        ]));
+                        ?>
+                        <a href="<?= htmlspecialchars($all_href) ?>" class="cashier-card<?= $all_active ? ' is-active' : '' ?>" id="cashier-card-all" aria-pressed="<?= $all_active ? 'true' : 'false' ?>">
+                            <div class="cashier-card-top">
+                                <div class="cashier-card-avatar all"><i class="fas fa-users"></i></div>
+                                <div>
+                                    <div class="cashier-card-name">All Staff</div>
+                                    <div class="cashier-card-role">Cashiers &amp; Managers</div>
+                                </div>
+                            </div>
+                            <div class="cashier-card-stats">
+                                <div class="cashier-card-stat">
+                                    <span>Sales</span>
+                                    <strong><?= number_format($cashier_stats_all['sale_count']) ?></strong>
+                                </div>
+                                <div class="cashier-card-stat">
+                                    <span>Revenue</span>
+                                    <strong class="revenue">₱<?= number_format($cashier_stats_all['total_revenue'], 2) ?></strong>
+                                </div>
+                            </div>
+                        </a>
+                        <?php foreach ($cashier_filter_list as $idx => $cf):
+                            $cid = (int)$cf['User_ID'];
+                            $is_active = ($filter_cashier_id === $cid);
+                            $card_href = '?' . http_build_query(array_filter([
+                                'cashier_id' => $cid,
+                                'filter_date' => $filter_date ?: null,
+                            ]));
+                            $avatar_class = 'c' . ($idx % 6);
+                            $initial = strtoupper(substr($cf['user_name'], 0, 1));
+                            $role_name_raw = strtolower((string)($cf['role_name'] ?? ''));
+                            if (strpos($role_name_raw, 'manager') !== false) {
+                                $role_label = 'Manager';
+                            } elseif (strpos($role_name_raw, 'cashier') !== false) {
+                                $role_label = 'Cashier';
+                            } else {
+                                $role_label = ucwords(str_replace('_', ' ', $cf['role_name'] ?? 'Staff'));
+                            }
+                        ?>
+                        <a href="<?= htmlspecialchars($card_href) ?>" class="cashier-card<?= $is_active ? ' is-active' : '' ?>" id="cashier-card-<?= $cid ?>" aria-pressed="<?= $is_active ? 'true' : 'false' ?>">
+                            <div class="cashier-card-top">
+                                <div class="cashier-card-avatar <?= $avatar_class ?>"><?= htmlspecialchars($initial) ?></div>
+                                <div>
+                                    <div class="cashier-card-name"><?= htmlspecialchars($cf['user_name']) ?></div>
+                                    <div class="cashier-card-role"><?= htmlspecialchars($role_label) ?></div>
+                                </div>
+                            </div>
+                            <div class="cashier-card-stats">
+                                <div class="cashier-card-stat">
+                                    <span>Sales</span>
+                                    <strong><?= number_format((int)($cf['sale_count'] ?? 0)) ?></strong>
+                                </div>
+                                <div class="cashier-card-stat">
+                                    <span>Revenue</span>
+                                    <strong class="revenue">₱<?= number_format((float)($cf['total_revenue'] ?? 0), 2) ?></strong>
+                                </div>
+                            </div>
+                        </a>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <div class="card-body" style="padding:0; border-top:1px solid #f1f5f9;">
+                    <?php if ($filter_cashier_id > 0 && !empty($cashier_filter_list)):
+                        $selected_cashier_name = '';
+                        foreach ($cashier_filter_list as $cf) {
+                            if ((int)$cf['User_ID'] === $filter_cashier_id) {
+                                $selected_cashier_name = $cf['user_name'];
+                                break;
+                            }
+                        }
+                        if ($selected_cashier_name !== ''): ?>
+                    <div style="padding:0.875rem 1.5rem; background:#eef2ff; border-bottom:1px solid #c7d2fe; display:flex; align-items:center; gap:0.5rem; font-size:0.875rem; color:#4338ca;">
+                        <i class="fas fa-user-check"></i>
+                        Showing sales recorded by <strong><?= htmlspecialchars($selected_cashier_name) ?></strong>
+                        <?php if (!empty($filter_date)): ?>
+                            on <strong><?= htmlspecialchars(date('M d, Y', strtotime($filter_date))) ?></strong>
+                        <?php endif; ?>
+                    </div>
+                    <?php endif; endif; ?>
+                    <?php if ($sales_query_error): ?>
+                        <div style="margin:1.5rem; padding:1rem 1.25rem; background:#fef2f2; border:1px solid #fecaca; border-radius:12px; color:#991b1b; font-size:0.9rem;">
+                            <i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($sales_query_error) ?>
+                        </div>
+                    <?php elseif (!empty($sales_by_cashier)): ?>
                         <?php foreach ($sales_by_cashier as $cashier_name => $cashier_sales):
                             $cashier_total_amt = array_sum(array_column($cashier_sales, 'total_amount'));
                             $cashier_total_qty = array_sum(array_column($cashier_sales, 'total_qty'));
@@ -861,7 +1127,7 @@ $customers_result = $conn->query($customers_query);
                                 ?>
                                 <tr>
                                     <td><strong>#<?= $sale['Sale_ID'] ?></strong></td>
-                                    <td><?= date('M d, Y H:i', strtotime($sale['created_at'])) ?></td>
+                                    <td><?= formatSaleDate($sale['created_at'] ?? null) ?></td>
                                     <td>
                                         <span style="font-size:0.75rem; font-weight:600; padding:0.25rem 0.625rem; border-radius:9999px; background:<?= $sale['has_delivery'] ? '#dbeafe' : '#f0fdf4' ?>; color:<?= $sale['has_delivery'] ? '#1d4ed8' : '#15803d' ?>;">
                                             <?= $sale_type ?>
@@ -900,47 +1166,46 @@ $customers_result = $conn->query($customers_query);
                         </table>
                         </div>
                         <?php endforeach; ?>
-
-                        <!-- Pagination for Sales History -->
-                        <?php if ($sales_total_pages > 1): ?>
-                        <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; padding: 1.5rem; border-top: 1px solid #e2e8f0; background: #f8fafc;">
-                            <a href="?cashier_id=<?php echo $filter_cashier_id; ?>&filter_date=<?php echo urlencode($filter_date); ?>&sales_page=<?php echo max(1, $sales_page - 1); ?>" class="btn btn-secondary btn-sm" <?php echo $sales_page <= 1 ? 'style="pointer-events:none;opacity:0.5;"' : ''; ?>>
-                                <i class="fas fa-chevron-left"></i> Previous
-                            </a>
-                            <span style="font-size: 0.875rem; color: #475569; font-weight: 600;">
-                                Page <?php echo $sales_page; ?> of <?php echo $sales_total_pages; ?> (<?php echo $sales_total_items; ?> total)
-                            </span>
-                            <a href="?cashier_id=<?php echo $filter_cashier_id; ?>&filter_date=<?php echo urlencode($filter_date); ?>&sales_page=<?php echo min($sales_total_pages, $sales_page + 1); ?>" class="btn btn-secondary btn-sm" <?php echo $sales_page >= $sales_total_pages ? 'style="pointer-events:none;opacity:0.5;"' : ''; ?>>
-                                Next <i class="fas fa-chevron-right"></i>
-                            </a>
-                        </div>
-                        <?php endif; ?>
-
-                        <style>
-                            .table-scrollable {
-                                max-height: 500px;
-                                overflow-y: auto;
-                                overflow-x: auto;
-                            }
-                            .table-scrollable::-webkit-scrollbar {
-                                width: 8px;
-                                height: 8px;
-                            }
-                            .table-scrollable::-webkit-scrollbar-track {
-                                background: #f1f5f9;
-                                border-radius: 4px;
-                            }
-                            .table-scrollable::-webkit-scrollbar-thumb {
-                                background: #cbd5e1;
-                                border-radius: 4px;
-                            }
-                            .table-scrollable::-webkit-scrollbar-thumb:hover {
-                                background: #94a3b8;
-                            }
-                        </style>
                     <?php else: ?>
                         <p style="text-align:center; color:#6b7280; padding:2rem;">No sales recorded yet.</p>
                     <?php endif; ?>
+
+                    <?php if ($sales_total_pages > 1): ?>
+                    <div style="display: flex; justify-content: center; align-items: center; gap: 0.5rem; padding: 1.5rem; border-top: 1px solid #e2e8f0; background: #f8fafc;">
+                        <a href="?cashier_id=<?php echo $filter_cashier_id; ?>&filter_date=<?php echo urlencode($filter_date); ?>&sales_page=<?php echo max(1, $sales_page - 1); ?>" class="btn btn-secondary btn-sm" <?php echo $sales_page <= 1 ? 'style="pointer-events:none;opacity:0.5;"' : ''; ?>>
+                            <i class="fas fa-chevron-left"></i> Previous
+                        </a>
+                        <span style="font-size: 0.875rem; color: #475569; font-weight: 600;">
+                            Page <?php echo $sales_page; ?> of <?php echo $sales_total_pages; ?> (<?php echo $sales_total_items; ?> total)
+                        </span>
+                        <a href="?cashier_id=<?php echo $filter_cashier_id; ?>&filter_date=<?php echo urlencode($filter_date); ?>&sales_page=<?php echo min($sales_total_pages, $sales_page + 1); ?>" class="btn btn-secondary btn-sm" <?php echo $sales_page >= $sales_total_pages ? 'style="pointer-events:none;opacity:0.5;"' : ''; ?>>
+                            Next <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </div>
+                    <?php endif; ?>
+
+                    <style>
+                        .table-scrollable {
+                            max-height: 500px;
+                            overflow-y: auto;
+                            overflow-x: auto;
+                        }
+                        .table-scrollable::-webkit-scrollbar {
+                            width: 8px;
+                            height: 8px;
+                        }
+                        .table-scrollable::-webkit-scrollbar-track {
+                            background: #f1f5f9;
+                            border-radius: 4px;
+                        }
+                        .table-scrollable::-webkit-scrollbar-thumb {
+                            background: #cbd5e1;
+                            border-radius: 4px;
+                        }
+                        .table-scrollable::-webkit-scrollbar-thumb:hover {
+                            background: #94a3b8;
+                        }
+                    </style>
                 </div>
             </div>
         </div>

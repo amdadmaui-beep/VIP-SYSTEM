@@ -1,5 +1,4 @@
 <?php
-session_start();
 require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/csrf.php';
@@ -11,7 +10,7 @@ $isDebug = defined('APP_DEBUG') && APP_DEBUG;
 $csrf = $_POST['csrf_token'] ?? $_SERVER['HTTP_X_CSRF_TOKEN'] ?? null;
 if ($csrf !== null && $csrf !== '') {
     try {
-        if (!validateCsrfToken((string)$csrf)) {
+        if (!validateCsrfToken(false)) {
             http_response_code(403);
             echo json_encode(['success' => false, 'error' => 'Invalid CSRF token']);
             exit;

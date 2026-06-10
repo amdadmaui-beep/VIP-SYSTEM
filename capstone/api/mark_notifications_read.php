@@ -6,10 +6,10 @@ require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/roles_helper.php';
 
-// Accessible to Owner (1), Manager (2), and Inventory Staff
-$management_roles = [1, 2];
+// Accessible to management and inventory staff (role IDs from DB)
+$management_roles = getManagementRoleIds($conn);
 $staff_roles = getInventoryStaffRoleIds($conn);
-$allowed_roles = array_unique(array_merge($management_roles, $staff_roles));
+$allowed_roles = array_values(array_unique(array_merge($management_roles, $staff_roles)));
 
 if (!isset($_SESSION['user_role']) || !in_array((int)$_SESSION['user_role'], $allowed_roles, true)) {
     http_response_code(403);

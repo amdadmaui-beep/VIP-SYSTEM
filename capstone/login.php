@@ -323,7 +323,14 @@ input[type=number] { -moz-appearance: textfield; }
                         <div class="space-y-4">
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 ml-1">New Password</label>
-                                <input type="password" id="fNewPw" class="w-full bg-white/50 border border-slate-200 rounded-2xl px-5 py-4 text-base font-semibold focus:border-brand-500 outline-none transition-all" placeholder="At least 10 characters">
+                                <input type="password" id="fNewPw" class="w-full bg-white/50 border border-slate-200 rounded-2xl px-5 py-4 text-base font-semibold focus:border-brand-500 outline-none transition-all" placeholder="At least 10 characters" autocomplete="new-password">
+                                <div id="pwStrengthWrap" class="mt-3 hidden">
+                                    <div class="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                        <div id="pwStrengthBar" class="h-full rounded-full transition-all duration-300" style="width:0%;"></div>
+                                    </div>
+                                    <p id="pwStrengthLabel" class="text-xs font-bold mt-2 mb-0"></p>
+                                    <p id="pwStrengthHint" class="text-[11px] text-slate-500 mt-1 mb-0 leading-relaxed"></p>
+                                </div>
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-2 ml-1">Confirm New Password</label>
@@ -564,6 +571,79 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.key === 'Backspace' && !this.value && i > 0) codes[i-1].focus();
         });
     });
+
+    function evaluatePasswordStrength(password) {
+        if (!password) {
+            return { level: 'empty', label: '', percent: 0, hint: '', barClass: 'bg-slate-200', textClass: 'text-slate-400' };
+        }
+
+        let score = 0;
+        const checks = {
+            length: password.length >= 10,
+            long: password.length >= 14,
+            upper: /[A-Z]/.test(password),
+            lower: /[a-z]/.test(password),
+            number: /\d/.test(password),
+            special: /[^A-Za-z0-9]/.test(password)
+        };
+
+        if (checks.length) score++;
+        if (checks.long) score++;
+        if (checks.upper) score++;
+        if (checks.lower) score++;
+        if (checks.number) score++;
+        if (checks.special) score++;
+
+        const missing = [];
+        if (!checks.length) missing.push('10+ characters');
+        if (!checks.upper) missing.push('uppercase letter');
+        if (!checks.lower) missing.push('lowercase letter');
+        if (!checks.number) missing.push('number');
+        if (!checks.special) missing.push('special character');
+
+        const hint = missing.length
+            ? 'Add: ' + missing.join(', ') + '.'
+            : 'Password meets all security requirements.';
+
+        if (score <= 2) {
+            return { level: 'weak', label: 'Weak password', percent: 25, hint, barClass: 'bg-rose-500', textClass: 'text-rose-600' };
+        }
+        if (score <= 3) {
+            return { level: 'fair', label: 'Fair password', percent: 45, hint, barClass: 'bg-orange-500', textClass: 'text-orange-600' };
+        }
+        if (score <= 4) {
+            return { level: 'medium', label: 'Medium password', percent: 65, hint, barClass: 'bg-amber-500', textClass: 'text-amber-600' };
+        }
+        if (score <= 5) {
+            return { level: 'normal', label: 'Normal password', percent: 82, hint, barClass: 'bg-sky-500', textClass: 'text-sky-600' };
+        }
+        return { level: 'strong', label: 'Strong password', percent: 100, hint, barClass: 'bg-emerald-500', textClass: 'text-emerald-600' };
+    }
+
+    function updatePasswordStrengthMeter() {
+        const pwInput = document.getElementById('fNewPw');
+        const wrap = document.getElementById('pwStrengthWrap');
+        const bar = document.getElementById('pwStrengthBar');
+        const label = document.getElementById('pwStrengthLabel');
+        const hint = document.getElementById('pwStrengthHint');
+        if (!pwInput || !wrap || !bar || !label || !hint) return;
+
+        const result = evaluatePasswordStrength(pwInput.value);
+        if (result.level === 'empty') {
+            wrap.classList.add('hidden');
+            return;
+        }
+
+        wrap.classList.remove('hidden');
+        bar.style.width = result.percent + '%';
+        bar.className = 'h-full rounded-full transition-all duration-300 ' + result.barClass;
+        label.textContent = result.label;
+        label.className = 'text-xs font-bold mt-2 mb-0 ' + result.textClass;
+        hint.textContent = result.hint;
+    }
+
+    document.getElementById('fNewPw').addEventListener('input', updatePasswordStrengthMeter);
+    document.getElementById('fNewPw').addEventListener('focus', updatePasswordStrengthMeter);
 
     /* Reset Password Result Handler */
     const fMsg2 = document.getElementById('fMsg2');

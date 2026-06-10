@@ -3,7 +3,7 @@
         <!-- Sidebar logic remains untouched via PHP rendering -->
         <?php
         require_once __DIR__ . '/../../includes/sidebar.php';
-        renderSidebar($conn, ['base' => '', 'active' => 'dashboard']);
+        renderSidebar($conn, ['base' => '', 'active' => 'dashboard', 'hide_mgr_notifications' => true]);
         ?>
 
         <main class="main-content index-dashboard flex-1 w-full" id="mainContent">
@@ -874,7 +874,7 @@
     </div>
 
     <script src="assets/js/script.js"></script>
-    <script src="../assets/js/notification_helper.js"></script>
+    <script src="assets/js/notification_helper.js?v=<?php echo filemtime(__DIR__ . '/../../assets/js/notification_helper.js'); ?>"></script>
     <script>
         lucide.createIcons();
         // =============================================
@@ -1494,6 +1494,9 @@
             const notifDropdown = document.getElementById('notificationDropdown');
             const notifBadge = document.getElementById('notificationBadge');
             const notifList = document.getElementById('notificationList');
+            if (!notifToggle || !notifDropdown || !notifBadge || !notifList) {
+                console.warn('Dashboard notification UI elements missing — polling disabled.');
+            } else {
             var userId = <?php echo json_encode((int)($_SESSION['user_id'] ?? 0)); ?>;
             var notifKey = 'notif_lastId_' + userId;
             var countKey = 'notif_count_' + userId;
@@ -1547,7 +1550,9 @@
                                         persistShownIds();
                                         unreadCount++;
                                         localStorage.setItem(countKey, unreadCount);
-                                        playNotificationSound();
+                                        if (typeof playNotificationSound === 'function') {
+                                            try { playNotificationSound(); } catch (soundErr) { console.warn('Notification sound failed', soundErr); }
+                                        }
                                         showToast(log.Activity_Type || 'Activity', log.Action_Details);
                                     }
                                     
@@ -1656,6 +1661,7 @@
             // Initial fetch and start polling every 5 seconds
             fetchNotifications();
             setInterval(() => fetchNotifications(true), 5000);
+            } // end notification UI guard
 
             // Antigravity Intersection Observer - Scroll Stacking Animations
             const animatedElements = document.querySelectorAll('.animate-slide-up-3d');

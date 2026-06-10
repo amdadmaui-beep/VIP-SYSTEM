@@ -7,9 +7,6 @@
  * Location: capstone/api/delivery_backend.php
  */
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
 require_once '../includes/auth.php';
 require_once '../includes/db.php';
 require_once '../includes/roles_helper.php';
@@ -47,6 +44,135 @@ function deliveryStatusLocksAssignment(string $status): bool {
 function getDeliveryAssignedRiderId(PDO $conn, int $deliveryId): int
 {
     return riderGetUserIdByDeliveryId($conn, $deliveryId);
+}
+
+function handleBulkTransfer(PDO $conn, int $user_id): void
+{
+    global $dashboard_ids, $rider_ids;
+
+    $user_role = (int)($_SESSION['user_role'] ?? 0);
+    if (!in_array($user_role, $dashboard_ids, true) || in_array($user_role, $rider_ids, true)) {
+        header('Location: ../pages/delivery.php?error=' . urlencode('Only management users can transfer deliveries.'));
+        exit;
+    }
+
+    $source_rider_id = (int)($_POST['source_rider_id'] ?? 0);
+    $new_rider_id = (int)($_POST['new_rider_id'] ?? 0);
+    $redirect_to = $_POST['redirect_to'] ?? '../pages/delivery.php';
+
+    if ($source_rider_id <= 0 || $new_rider_id <= 0) {
+        header("Location: {$redirect_to}?error=" . urlencode('Invalid rider selection.'));
+        exit;
+    }
+
+    if ($source_rider_id === $new_rider_id) {
+        header("Location: {$redirect_to}?error=" . urlencode('Cannot transfer to the same rider.'));
+        exit;
+    }
+
+    // Verify source rider has at least one Returning+Vehicle issue delivery
+    $vi_check = $conn->prepare("SELECT 1 FROM delivery WHERE assigned_rider_id = ? AND delivery_status = 'Returning' AND cancellation_reason = 'Vehicle issue' LIMIT 1");
+    $vi_check->execute([$source_rider_id]);
+    if (!$vi_check->fetchColumn()) {
+        header("Location: {$redirect_to}?error=" . urlencode('The selected rider does not have any Vehicle issue deliveries to transfer.'));
+        exit;
+    }
+
+    if (!riderCanBeAssignedToTarget($conn, $new_rider_id)) {
+        header("Location: {$redirect_to}?error=" . urlencode('Selected rider is not available for assignment.'));
+        exit;
+    }
+
+    $rider_stmt = $conn->prepare("SELECT COALESCE(full_name, user_name) FROM user WHERE User_ID = ?");
+    $rider_stmt->execute([$new_rider_id]);
+    $new_rider_name = (string)($rider_stmt->fetchColumn() ?: '');
+    if ($new_rider_name === '') {
+        header("Location: {$redirect_to}?error=" . urlencode('New rider not found.'));
+        exit;
+    }
+
+    // Find all active deliveries for the source rider
+    $stmt = $conn->prepare("SELECT Delivery_ID, Order_ID, delivery_status, cancellation_reason 
+                            FROM delivery 
+                            WHERE assigned_rider_id = ? 
+                              AND delivery_status NOT IN ('Completed', 'Cancelled', 'Delivered')
+                            ORDER BY Delivery_ID");
+    $stmt->execute([$source_rider_id]);
+    $deliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($deliveries)) {
+        header("Location: {$redirect_to}?error=" . urlencode('No active deliveries found for this rider.'));
+        exit;
+    }
+
+    $conn->beginTransaction();
+    try {
+        $order_status_col = 'order_status';
+        $col_check = $conn->query("SHOW COLUMNS FROM orders WHERE Field IN ('order_status', 'status')");
+        if ($col_check && $col_check->rowCount() > 0) {
+            $order_status_col = $col_check->fetch(PDO::FETCH_ASSOC)['Field'];
+        }
+        $scheduled_status = getValidOrderStatus($conn, 'Scheduled for Delivery', ['Scheduled for Delivery', 'Requested', 'pending']);
+
+        $del_cols = array_column($conn->query("SHOW COLUMNS FROM delivery")->fetchAll(PDO::FETCH_ASSOC), 'Field');
+        $has_assigned_id = in_array('assigned_rider_id', $del_cols);
+
+        $transferred_count = 0;
+        foreach ($deliveries as $delivery) {
+            $delivery_id = (int)$delivery['Delivery_ID'];
+            $order_id = (int)$delivery['Order_ID'];
+
+            $updates = ["delivery_status = 'Scheduled'", "updated_at = NOW()"];
+            $params = [];
+            if ($has_assigned_id) {
+                $updates[] = "assigned_rider_id = ?";
+                $params[] = $new_rider_id;
+            }
+            if (in_array('delivered_by', $del_cols)) {
+                $updates[] = "delivered_by = ?";
+                $params[] = $new_rider_name;
+            }
+            $params[] = $delivery_id;
+            $conn->prepare("UPDATE delivery SET " . implode(', ', $updates) . " WHERE Delivery_ID = ?")->execute($params);
+
+            if ($order_id > 0) {
+                $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")->execute([$scheduled_status, $order_id]);
+            }
+
+            logActivity('DELIVERY', "Bulk transferred Delivery #{$delivery_id} (Order #{$order_id}) from Rider #{$source_rider_id} to {$new_rider_name} due to Vehicle issue.", $delivery_id);
+
+            $notifMsg = "New delivery assigned: Delivery #{$delivery_id} for Order #{$order_id}. Previously flagged as Vehicle issue — please coordinate pickup with the original rider.";
+            $notifStmt = $conn->prepare("INSERT INTO activity_logs (User_ID, Activity_Type, Action_Details, Reference_ID, Log_Time) VALUES (?, 'NOTIFICATION', ?, ?, CURRENT_TIMESTAMP)");
+            $notifStmt->execute([$new_rider_id, $notifMsg, $delivery_id]);
+
+            $transferStmt = $conn->prepare("INSERT INTO delivery_transfers (Delivery_ID, from_rider_id, to_rider_id, transferred_by_user_id, reason) VALUES (?, ?, ?, ?, 'Vehicle issue')");
+            $transferStmt->execute([$delivery_id, $source_rider_id, $new_rider_id, $user_id]);
+
+            $transferred_count++;
+        }
+
+        // Set old rider to Off Duty
+        ensureRiderWorkflowSchema($conn);
+        $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                        VALUES (?, 'Off Duty', NOW())
+                        ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()")->execute([$source_rider_id]);
+
+        // Sync new rider availability
+        if ($new_rider_id > 0) {
+            syncRiderAvailabilityForUser($conn, $new_rider_id);
+        }
+
+        $conn->commit();
+        cacheInvalidateTable('delivery');
+        cacheInvalidateTable('delivery_detail');
+        cacheInvalidateTable('orders');
+        header("Location: {$redirect_to}?success=" . urlencode("Successfully transferred {$transferred_count} delivery/deliveries to {$new_rider_name}. They can now see them in their queue."));
+        exit;
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        header("Location: {$redirect_to}?error=" . urlencode('Bulk transfer failed: ' . $e->getMessage()));
+        exit;
+    }
 }
 
 function geocodeDestinationAddress($address) {
@@ -114,7 +240,7 @@ function respondDelivery($conn, bool $success, string $message, ?string $redirec
 // Handle different delivery operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Protection: Validate token for state-changing POST actions - Security Fix
-    $state_changing_actions = ['create_delivery', 'update_delivery_status', 'record_delivery_details', 'assign_rider', 'cancel_delivery', 'set_rider_availability', 'reschedule_delivery', 'transfer_returning_delivery'];
+    $state_changing_actions = ['create_delivery', 'update_delivery_status', 'record_delivery_details', 'assign_rider', 'cancel_delivery', 'set_rider_availability', 'reschedule_delivery', 'transfer_returning_delivery', 'bulk_transfer'];
     $action = $_POST['action'] ?? '';
     if (in_array($action, $state_changing_actions, true)) {
         if (!validateCsrfToken(false)) {
@@ -122,11 +248,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isJsonDeliveryRequest()) {
                 header('Content-Type: application/json; charset=utf-8');
                 http_response_code(403);
-                echo json_encode(['success' => false, 'error' => $error_msg]);
+                echo json_encode(['success' => false, 'error' => $error_msg, 'csrf_token' => getCsrfToken()]);
                 exit();
             }
-            
-            // Context-aware redirect for CSRF failure
+
             $redirect_to = $_POST['redirect_to'] ?? '../pages/delivery.php';
             if (!preg_match('/^\.\.\/pages\/[\w]+\.php$/', $redirect_to)) {
                 $redirect_to = '../pages/delivery.php';
@@ -178,6 +303,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             break;
         case 'transfer_returning_delivery':
             handleTransferReturningDelivery($conn, $user_id);
+            break;
+        case 'bulk_transfer':
+            handleBulkTransfer($conn, $user_id);
             break;
         default:
             $redirect_to = $_POST['redirect_to'] ?? '../pages/delivery.php';

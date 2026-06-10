@@ -184,6 +184,17 @@ function prepTasksFetchQueue(PDO $conn): array
     $deliveryTimeSelect = $hasDeliveryTime ? 'o.delivery_time' : ($hasOrderTime ? 'o.order_time' : 'NULL');
     $deliveryAddressSelect = $hasDeliveryAddress ? 'o.delivery_address' : "''";
 
+    $deliveryColumns = prepTasksGetColumns($conn, 'delivery');
+    $riderJoinSql = '';
+    $riderNameSql = "COALESCE(NULLIF(d.delivered_by, ''), '')";
+    if (in_array('assigned_rider_id', $deliveryColumns, true)) {
+        $riderJoinSql = 'LEFT JOIN user rider ON rider.User_ID = d.assigned_rider_id';
+        $riderNameSql = "COALESCE(NULLIF(d.delivered_by, ''), NULLIF(rider.full_name, ''), rider.user_name, '')";
+    } elseif (in_array('delivered_by_user_id', $deliveryColumns, true)) {
+        $riderJoinSql = 'LEFT JOIN user rider ON rider.User_ID = d.delivered_by_user_id';
+        $riderNameSql = "COALESCE(NULLIF(d.delivered_by, ''), NULLIF(rider.full_name, ''), rider.user_name, '')";
+    }
+
     $sql = "
         SELECT
             o.Order_ID,
@@ -198,6 +209,7 @@ function prepTasksFetchQueue(PDO $conn): array
             d.Delivery_ID,
             d.schedule_date,
             d.delivery_status,
+            {$riderNameSql} AS rider_name,
             COALESCE(t.status, 'not_started') AS prep_status,
             t.started_at,
             t.ready_at
@@ -211,12 +223,18 @@ function prepTasksFetchQueue(PDO $conn): array
             LIMIT 1
         )
         LEFT JOIN order_preparation_tasks t ON t.Order_ID = o.Order_ID
+        {$riderJoinSql}
         WHERE LOWER(COALESCE(o.{$orderStatusCol}, '')) NOT IN ('completed', 'cancelled', 'canceled', 'out for delivery', 'delivered', 'delivered (pending cash turnover)')
           AND (d.delivery_status IS NULL OR d.delivery_status != 'Cancelled')
         ORDER BY COALESCE(d.schedule_date, {$deliveryDateSelect}, o.order_date), COALESCE({$deliveryTimeSelect}, '23:59:59'), o.Order_ID
     ";
 
-    $rows = $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    try {
+        $rows = $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Throwable $e) {
+        error_log('prepTasksFetchQueue failed: ' . $e->getMessage());
+        $rows = [];
+    }
     $orderIds = array_map(static fn(array $row): int => (int)$row['Order_ID'], $rows);
     $itemsByOrder = prepTasksFetchItems($conn, $orderIds);
 

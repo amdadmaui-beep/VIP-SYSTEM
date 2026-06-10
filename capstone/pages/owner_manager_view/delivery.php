@@ -1,7 +1,7 @@
 <?php
-session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/roles_helper.php';
 require_once __DIR__ . '/../../includes/rider_availability_helper.php';
 require_once __DIR__ . '/../../includes/delivery_cancellation_helper.php';
@@ -257,6 +257,54 @@ $orders_query = "SELECT o.Order_ID, o.order_date, COALESCE(o.customer_name_snaps
                  ORDER BY o.order_date DESC
                  LIMIT 50";
 $orders_result = $conn->query($orders_query);
+
+// Find riders with Vehicle issue deliveries for bulk transfer
+$vehicle_issue_riders = [];
+$bulk_transfer_data = [];
+try {
+    $viq = "SELECT d.assigned_rider_id, COALESCE(u.full_name, u.user_name) as rider_name
+            FROM delivery d
+            LEFT JOIN user u ON d.assigned_rider_id = u.User_ID
+            WHERE d.delivery_status = 'Returning' 
+              AND d.cancellation_reason = 'Vehicle issue'
+              AND d.assigned_rider_id IS NOT NULL AND d.assigned_rider_id > 0
+            GROUP BY d.assigned_rider_id";
+    $vir = $conn->query($viq);
+    while ($vrow = $vir->fetch(PDO::FETCH_ASSOC)) {
+        $rid = (int)$vrow['assigned_rider_id'];
+        $adq = "SELECT d.Delivery_ID, d.Order_ID, d.delivery_status, 
+                       COALESCE(o.customer_name_snapshot, c.customer_name) as customer_name,
+                       d.schedule_date
+                FROM delivery d
+                LEFT JOIN orders o ON d.Order_ID = o.Order_ID
+                LEFT JOIN customers c ON o.Customer_ID = c.Customer_ID
+                WHERE d.assigned_rider_id = ?
+                  AND d.delivery_status NOT IN ('Completed', 'Cancelled', 'Delivered')
+                ORDER BY d.Delivery_ID";
+        $ads = $conn->prepare($adq);
+        $ads->execute([$rid]);
+        $active_deliveries = $ads->fetchAll(PDO::FETCH_ASSOC);
+        
+        $vehicle_issue_riders[$rid] = true;
+        $bulk_deliveries = [];
+        foreach ($active_deliveries as $ad) {
+            $bulk_deliveries[] = [
+                'delivery_id' => (int)$ad['Delivery_ID'],
+                'order_id' => (int)$ad['Order_ID'],
+                'customer_name' => $ad['customer_name'] ?? 'Unknown',
+                'status' => $ad['delivery_status'] ?? 'Unknown',
+                'schedule_date' => $ad['schedule_date'] ?? null
+            ];
+        }
+        $bulk_transfer_data[$rid] = [
+            'rider_name' => $vrow['rider_name'] ?: ('User #' . $rid),
+            'deliveries' => $bulk_deliveries
+        ];
+    }
+} catch (Throwable $e) {
+    $vehicle_issue_riders = [];
+    $bulk_transfer_data = [];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -268,9 +316,7 @@ $orders_result = $conn->query($orders_query);
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g" crossorigin="anonymous">
     <link rel="stylesheet" href="../assets/css/orders.css?v=<?php echo filemtime(__DIR__ . '/../../assets/css/orders.css'); ?>">
     <link rel="stylesheet" href="../assets/css/style.css?v=<?php echo filemtime(__DIR__ . '/../../assets/css/style.css'); ?>">
-    <script>
-        window.csrfToken = '<?php echo getCsrfToken(); ?>';
-    </script>
+    <?php echo csrfBootstrapTags(); ?>
     <style>
         /* Stats Cards */
         .stats-grid {
@@ -848,6 +894,15 @@ $orders_result = $conn->query($orders_query);
                                                     <?php echo htmlspecialchars($row_status); ?>
                                                 </span>
                                             </div>
+                                            <?php if (isset($vehicle_issue_riders[(int)$rider_row['User_ID']])): ?>
+                                            <div class="rider-pill-actions">
+                                                <button type="button" class="btn-rider-state" 
+                                                        style="background:#fef3c7;color:#92400e;"
+                                                        onclick='openBulkTransferModal(<?php echo (int)$rider_row["User_ID"]; ?>, <?php echo json_encode($rider_row["name"] ?? "Rider", JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'>
+                                                    <i class="fas fa-exchange-alt"></i> Transfer All (Vehicle Issue)
+                                                </button>
+                                            </div>
+                                            <?php endif; ?>
                                         </div>
                                     <?php endforeach; ?>
                                 <?php else: ?>
@@ -1074,7 +1129,7 @@ $orders_result = $conn->query($orders_query);
                                         </td>
                                         <?php if ($show_assign_column): ?>
                                         <td>
-                                            <form method="POST" action="../api/delivery_backend.php" class="d-inline assign-rider-form">
+                                            <form method="POST" action="delivery.php" class="d-inline assign-rider-form">
                                                 <?php echo csrfTokenField(); ?>
                                                 <input type="hidden" name="action" value="assign_rider">
                                                 <input type="hidden" name="delivery_id" value="<?php echo (int)$delivery['Delivery_ID']; ?>">
@@ -1297,7 +1352,7 @@ $orders_result = $conn->query($orders_query);
             <button type="button" onclick="closeRescheduleModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
         </div>
 
-        <form method="POST" action="../api/delivery_backend.php">
+        <form method="POST" action="delivery.php">
             <?php echo csrfTokenField(); ?>
             <input type="hidden" name="action" value="reschedule_delivery">
             <input type="hidden" name="delivery_id" id="rescheduleDeliveryId" value="">
@@ -1354,7 +1409,7 @@ $orders_result = $conn->query($orders_query);
             <button type="button" onclick="closeCancelDeliveryModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
         </div>
 
-        <form method="POST" action="../api/delivery_backend.php">
+        <form method="POST" action="delivery.php">
             <?php echo csrfTokenField(); ?>
             <input type="hidden" name="action" value="cancel_delivery">
             <input type="hidden" name="redirect_to" value="../pages/delivery.php">
@@ -1407,7 +1462,7 @@ $orders_result = $conn->query($orders_query);
             <button type="button" onclick="closeTransferModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
         </div>
 
-        <form method="POST" action="../api/delivery_backend.php">
+        <form method="POST" action="delivery.php">
             <?php echo csrfTokenField(); ?>
             <input type="hidden" name="action" value="transfer_returning_delivery">
             <input type="hidden" name="redirect_to" value="../pages/delivery.php">
@@ -1484,6 +1539,85 @@ $orders_result = $conn->query($orders_query);
     </div>
 </div>
 
+<!-- Bulk Transfer Modal (Transfer All) -->
+<div class="modal" id="bulkTransferModal" style="display:none; position:fixed; z-index:1100; left:0; top:0; width:100%; height:100%; background-color:rgba(15,23,42,0.55); align-items:center; justify-content:center; padding:1rem;">
+    <div class="modal-content" style="background:#fff; padding:2rem; border-radius:1rem; width:100%; max-width:640px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1.5rem; border-bottom:1px solid #e2e8f0; padding-bottom:1rem;">
+            <div>
+                <h2 id="bulkTransferModalTitle" style="font-weight:700; color:#0f172a; margin:0 0 0.35rem;"><i class="fas fa-exchange-alt" style="color:#d97706;"></i> Bulk Transfer — Vehicle Issue</h2>
+                <p id="bulkTransferModalSubtitle" style="margin:0; color:#64748b; font-size:0.92rem;">Transfer all active deliveries to an available rider.</p>
+            </div>
+            <button type="button" onclick="closeBulkTransferModal()" style="border:none; background:none; font-size:1.5rem; cursor:pointer; color:#94a3b8;">&times;</button>
+        </div>
+
+        <form method="POST" action="delivery.php">
+            <?php echo csrfTokenField(); ?>
+            <input type="hidden" name="action" value="bulk_transfer">
+            <input type="hidden" name="redirect_to" value="../pages/delivery.php">
+            <input type="hidden" name="source_rider_id" id="bulkSourceRiderId" value="">
+
+            <div style="display:grid; gap:1rem;">
+                <!-- Vehicle Issue Info -->
+                <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:1rem;">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <span style="font-size:1.5rem;">⚠️</span>
+                        <div>
+                            <strong style="color:#92400e; font-size:0.9rem;">Vehicle Issue Reported</strong>
+                            <p id="bulkTransferInfoText" style="margin:0.25rem 0 0; color:#b45309; font-size:0.85rem;">The rider reported a vehicle issue. All their active deliveries need to be reassigned.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Current Rider Display -->
+                <div style="background:#f1f5f9; border-radius:12px; padding:0.85rem 1rem;">
+                    <span style="font-size:0.75rem; font-weight:700; color:#64748b; text-transform:uppercase;">Source Rider</span>
+                    <p id="bulkCurrentRider" style="margin:0.25rem 0 0; font-weight:600; color:#0f172a;">—</p>
+                </div>
+
+                <!-- Active Deliveries List -->
+                <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden;">
+                    <div style="padding:0.75rem 1rem; background:#f1f5f9; border-bottom:1px solid #e2e8f0; font-size:0.78rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.05em;">
+                        <i class="fas fa-list"></i> Active Deliveries to Transfer
+                    </div>
+                    <div id="bulkDeliveryList" style="max-height:220px; overflow-y:auto; padding:0.5rem;">
+                        <p style="color:#94a3b8; font-style:italic; text-align:center; padding:1rem;">Loading...</p>
+                    </div>
+                </div>
+
+                <!-- Rider Select -->
+                <label style="display:grid; gap:0.45rem;">
+                    <span style="font-size:0.78rem; font-weight:700; letter-spacing:0.05em; color:#475569; text-transform:uppercase;">Transfer All To</span>
+                    <select
+                        id="bulkTransferRiderId"
+                        name="new_rider_id"
+                        required
+                        style="width:100%; border:1px solid #cbd5e1; border-radius:12px; padding:0.85rem 1rem; font-size:0.95rem; color:#0f172a; background:#fff;">
+                        <option value="">Select a rider</option>
+                        <?php foreach ($riders as $r): ?>
+                            <option value="<?php echo (int)$r['User_ID']; ?>">
+                                <?php echo htmlspecialchars($r['name'] ?? ('User #' . (int)$r['User_ID'])); ?>
+                                (<?php echo (int)($r['active_delivery_count'] ?? 0); ?> active)
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if (empty($riders)): ?>
+                        <span style="font-size:0.82rem; color:#dc2626;">No available riders. Mark a rider as Available first.</span>
+                    <?php else: ?>
+                        <span style="font-size:0.82rem; color:#64748b;">This rider will take over all deliveries from the affected rider.</span>
+                    <?php endif; ?>
+                </label>
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.75rem;">
+                <button type="button" onclick="closeBulkTransferModal()" class="btn btn-secondary">Cancel</button>
+                <button type="submit" class="btn btn-primary" style="background:linear-gradient(135deg, #d97706 0%, #b45309 100%); border:none;" <?php echo empty($riders) ? 'disabled' : ''; ?>>
+                    <i class="fas fa-exchange-alt"></i> Transfer All Deliveries
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <!-- Lightbox Modal -->
 <div id="imageLightbox" class="lightbox-overlay" onclick="closeLightbox()">
     <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
@@ -1494,6 +1628,7 @@ $orders_result = $conn->query($orders_query);
 <script>
 const canConfirmDelivered = <?php echo $can_confirm_delivered ? 'true' : 'false'; ?>;
 const transferData = <?php echo json_encode($transfer_map, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+const bulkTransferData = <?php echo json_encode($bulk_transfer_data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
 
 function openCancelDeliveryModal(payload) {
     const modal = document.getElementById('cancelDeliveryModal');
@@ -1638,6 +1773,71 @@ function closeTransferTimeline() {
     if (modal) modal.style.display = 'none';
 }
 
+function openBulkTransferModal(riderId, riderName) {
+    const modal = document.getElementById('bulkTransferModal');
+    const riderInput = document.getElementById('bulkSourceRiderId');
+    const riderDisplay = document.getElementById('bulkCurrentRider');
+    const riderSelect = document.getElementById('bulkTransferRiderId');
+    const deliveryList = document.getElementById('bulkDeliveryList');
+    if (!modal || !riderInput || !riderDisplay || !riderSelect || !deliveryList) return;
+
+    riderInput.value = riderId;
+    riderDisplay.textContent = riderName || 'Unknown';
+
+    // Hide the source rider from the dropdown
+    for (var i = 0; i < riderSelect.options.length; i++) {
+        riderSelect.options[i].style.display = '';
+    }
+    var srcId = parseInt(riderId, 10);
+    if (srcId > 0) {
+        for (var i = 0; i < riderSelect.options.length; i++) {
+            if (parseInt(riderSelect.options[i].value, 10) === srcId) {
+                riderSelect.options[i].style.display = 'none';
+                break;
+            }
+        }
+    }
+    riderSelect.value = '';
+
+    // Render delivery list
+    var data = bulkTransferData[riderId];
+    var deliveries = data ? data.deliveries : [];
+    if (deliveries.length === 0) {
+        deliveryList.innerHTML = '<p style="color:#94a3b8; font-style:italic; text-align:center; padding:1rem;">No active deliveries found for this rider.</p>';
+    } else {
+        var html = '';
+        for (var i = 0; i < deliveries.length; i++) {
+            var d = deliveries[i];
+            var statusColors = {
+                'Scheduled': { bg: '#dbeafe', color: '#1d4ed8' },
+                'In Transit': { bg: '#fef3c7', color: '#b45309' },
+                'Returning': { bg: '#e0f2fe', color: '#0369a1' }
+            };
+            var sc = statusColors[d.status] || { bg: '#f1f5f9', color: '#475569' };
+            var dateStr = d.schedule_date ? new Date(d.schedule_date).toLocaleDateString() : '—';
+            html += '<div style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.75rem; border-bottom:1px solid #f1f5f9;">';
+            html += '<span style="font-weight:700; color:#0f172a; font-size:0.85rem; min-width:70px;">#' + d.delivery_id + '</span>';
+            html += '<span style="color:#475569; font-size:0.82rem; min-width:50px;">O#' + d.order_id + '</span>';
+            html += '<span style="color:#334155; font-size:0.82rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">' + escapeHtml(d.customer_name || 'Unknown') + '</span>';
+            html += '<span style="display:inline-flex; align-items:center; gap:0.25rem; padding:0.2rem 0.55rem; border-radius:6px; font-size:0.7rem; font-weight:600; background:' + sc.bg + '; color:' + sc.color + ';">' + escapeHtml(d.status) + '</span>';
+            html += '</div>';
+        }
+        var count = deliveries.length;
+        var headerHtml = '<div style="display:flex; justify-content:space-between; align-items:center; padding:0.5rem 0.75rem; background:#f1f5f9; border-bottom:1px solid #e2e8f0; font-size:0.78rem; font-weight:600; color:#475569;">';
+        headerHtml += '<span>' + count + ' delivery/deliveries</span>';
+        headerHtml += '<span style="color:#d97706;"><i class="fas fa-exchange-alt"></i> Will be transferred</span>';
+        headerHtml += '</div>';
+        deliveryList.innerHTML = headerHtml + html;
+    }
+
+    modal.style.display = 'flex';
+}
+
+function closeBulkTransferModal() {
+    const modal = document.getElementById('bulkTransferModal');
+    if (modal) modal.style.display = 'none';
+}
+
 function escapeHtml(str) {
     var div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
@@ -1657,7 +1857,8 @@ function updateDeliveryStatus(deliveryId, currentStatus, allowDelivered) {
     if (confirm(`Update delivery status from "${currentStatus}" to "${nextStatus}"?`)) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = '../api/delivery_backend.php';
+        const pageName = (window.location.pathname || '').split('/').pop() || 'delivery.php';
+        form.action = pageName;
         
         const actionInput = document.createElement('input');
         actionInput.type = 'hidden';
@@ -1665,11 +1866,15 @@ function updateDeliveryStatus(deliveryId, currentStatus, allowDelivered) {
         actionInput.value = 'update_delivery_status';
         form.appendChild(actionInput);
         
-        if (window.csrfToken) {
+        const csrfToken = (typeof window.csrfToken === 'string' && window.csrfToken)
+            || document.querySelector('meta[name="csrf-token"]')?.content
+            || document.querySelector('input[name="csrf_token"]')?.value
+            || '';
+        if (csrfToken) {
             const csrfInput = document.createElement('input');
             csrfInput.type = 'hidden';
             csrfInput.name = 'csrf_token';
-            csrfInput.value = window.csrfToken;
+            csrfInput.value = csrfToken;
             form.appendChild(csrfInput);
         }
         
@@ -1922,6 +2127,7 @@ document.addEventListener('keydown', function(event) {
         closeCancelDeliveryModal();
         closeRescheduleModal();
         closeTransferModal();
+        closeBulkTransferModal();
     }
 });
 
@@ -1941,6 +2147,10 @@ window.addEventListener('click', function(event) {
     }
     if (event.target === transferModal) {
         closeTransferModal();
+    }
+    const bulkTransferModal = document.getElementById('bulkTransferModal');
+    if (event.target === bulkTransferModal) {
+        closeBulkTransferModal();
     }
 });
 </script>

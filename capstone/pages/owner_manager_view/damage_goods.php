@@ -129,6 +129,16 @@ function pesoLoss(float $val): string {
 function wholeNumber($val): string {
     return number_format((float)$val, 0);
 }
+
+if (!function_exists('formatDamageDate')) {
+    function formatDamageDate(?string $datetime): string {
+        if (empty($datetime)) {
+            return '—';
+        }
+        $ts = strtotime($datetime);
+        return ($ts !== false) ? date('M j, Y g:i A', $ts) : '—';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -282,6 +292,51 @@ function wholeNumber($val): string {
             border-color: #ef4444;
             outline: none;
             box-shadow: 0 0 0 3px rgba(239,68,68,0.1);
+        }
+
+        .damage-history-scroll {
+            max-height: calc(100vh - 420px);
+            min-height: 320px;
+            overflow-y: auto;
+            overflow-x: auto;
+            border-radius: 16px;
+            scrollbar-width: thin;
+            scrollbar-color: #fca5a5 #fef2f2;
+        }
+        .damage-history-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .damage-history-scroll::-webkit-scrollbar-track {
+            background: #fef2f2;
+            border-radius: 8px;
+        }
+        .damage-history-scroll::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, #fca5a5, #ef4444);
+            border-radius: 8px;
+        }
+        .damage-history-scroll::-webkit-scrollbar-thumb:hover {
+            background: #dc2626;
+        }
+
+        .damage-modal-scroll {
+            max-height: 70vh;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #fca5a5 transparent;
+        }
+        .damage-modal-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .damage-modal-scroll::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        .damage-modal-scroll::-webkit-scrollbar-thumb {
+            background: #fca5a5;
+            border-radius: 6px;
+        }
+        .damage-modal-scroll::-webkit-scrollbar-thumb:hover {
+            background: #ef4444;
         }
         
         @media (max-width: 768px) {
@@ -451,7 +506,7 @@ function wholeNumber($val): string {
         </section>
 
         <section class="inventory-table-container" style="background: transparent; box-shadow: none; padding: 0;">
-            <div class="table-responsive">
+            <div class="table-responsive damage-history-scroll">
                 <table class="damage-history-table">
                     <thead>
                         <tr>
@@ -471,7 +526,7 @@ function wholeNumber($val): string {
                         <?php else: ?>
                             <?php foreach ($history as $row): ?>
                                 <tr>
-                                    <td data-label="Date Reported"><?php echo date('M j, Y g:i A', strtotime($row['created_at'])); ?></td>
+                                    <td data-label="Date Reported"><?php echo formatDamageDate($row['created_at'] ?? null); ?></td>
                                     <td data-label="Product"><strong style="color:#1e293b; font-weight:600;"><?php echo htmlspecialchars($row['product_name']); ?></strong></td>
                                     <td data-label="Qty"><span style="background:#f1f5f9; color:#475569; padding:0.25rem 0.5rem; border-radius:6px; font-weight:600; font-size:0.85rem;"><?php echo wholeNumber($row['quantity']); ?> <?php echo htmlspecialchars($row['unit_name'] ?? ''); ?></span></td>
                                     <td data-label="Type"><span style="background:#fff7ed; color:#c2410c; padding:0.25rem 0.5rem; border-radius:6px; font-weight:600; font-size:0.85rem;"><i class="fas fa-exclamation-circle" style="margin-right:4px;"></i> <?php echo htmlspecialchars($row['damage_type_label'] ?: $row['damage_type_raw']); ?></span></td>
@@ -504,7 +559,7 @@ function wholeNumber($val): string {
             <h2 style="color: white; margin: 0; display: flex; align-items: center; gap: 0.5rem;"><i class="fas fa-plus-circle" style="color: #ef4444;"></i> Report Damaged Goods</h2>
             <span class="inventory-modal-close" onclick="closeDamageModal()" style="color: white; opacity: 0.8;">&times;</span>
         </div>
-        <div class="inventory-modal-body" style="padding: 2rem;">
+        <div class="inventory-modal-body damage-modal-scroll" style="padding: 2rem;">
             <form action="../api/damage_goods_backend.php" method="POST">
                 <?php echo csrfTokenField(); ?>
                 <div class="form-group" style="margin-bottom: 1.5rem;">

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#7c3aed">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="VIP Rider">
-    <meta name="csrf-token" content="<?php echo htmlspecialchars($_SESSION['csrf_token'] ?? ''); ?>">
+    <?php echo csrfBootstrapTags(); ?>
     <link rel="manifest" href="../manifest.webmanifest">
     <link rel="apple-touch-icon" href="../assets/images/vip_logo.jpg">
     <title>Rider Dashboard — VIP Ice Plant</title>

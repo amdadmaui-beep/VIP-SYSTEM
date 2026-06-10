@@ -54,23 +54,18 @@
                     <!-- Payment Info -->
                     <div class="grid grid-cols-2 gap-4">
                         <div class="bg-blue-50/50 rounded-[20px] p-4 border border-blue-100/50">
-                            <label class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 block">Expected</label>
+                            <label id="expectedLabel" class="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-1 block">Expected</label>
                             <div id="detailTotalDisplay" class="text-xl font-black text-blue-600 tracking-tight">₱0.00</div>
                         </div>
-                        <div class="bg-white rounded-[20px] p-4 border border-slate-200" id="collectInputGroup">
+                        <div class="bg-white rounded-[20px] p-4 border border-slate-200">
                             <label id="collectLabel" class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">Amount to Collect</label>
                             <input type="number" step="0.01" min="0" id="amountToCollect" class="form-control border-0 p-0 font-black text-xl text-dark focus:ring-0" placeholder="0.00">
                         </div>
                     </div>
-                    <div id="arInfo">
-                        <div id="arCollectNote" class="bg-amber-50/50 rounded-[12px] p-3 border border-amber-200/50 text-xs text-amber-700 font-medium flex items-start gap-2">
+                    <div id="arInfo" style="display:none;">
+                        <div class="bg-amber-50/50 rounded-[12px] p-3 border border-amber-200/50 text-xs text-amber-700 font-medium flex items-start gap-2">
                             <i class="fas fa-file-invoice-dollar mt-0.5"></i>
-                            <span>AR order — collect only if customer pays upfront or partially</span>
-                        </div>
-                        <div id="arRevealLink" style="margin-top:8px; text-align:center; display:none;">
-                            <a href="#" class="text-xs text-blue-600 font-semibold" onclick="toggleArCollectInput(); return false;">
-                                <i class="fas fa-hand-holding-dollar"></i> Customer paid? Enter amount
-                            </a>
+                            <span>AR order — <strong id="arPostNote">To be posted to AR: ₱0.00</strong></span>
                         </div>
                     </div>
 

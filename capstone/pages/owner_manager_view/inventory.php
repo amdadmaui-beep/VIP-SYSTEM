@@ -134,6 +134,7 @@ $query = "SELECT
     p.Product_ID,
     p.product_name,
     u.unit_name,
+    c.category_name,
     p.wholesale_price,
     p.retail_price,
     p.description,
@@ -145,6 +146,7 @@ $query = "SELECT
     (SELECT updated_at FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY updated_at DESC LIMIT 1) as inventory_updated_at
 FROM products p
 LEFT JOIN units u ON p.unit_id = u.unit_id
+LEFT JOIN product_categories c ON p.category_id = c.category_id
 ORDER BY p.created_date DESC";
 
 $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
@@ -726,6 +728,7 @@ $history_result = $conn->query($history_query)->fetchAll();
                             <tr>
                                 <th>Product Name</th>
                                 <th>Unit</th>
+                                <th>Category</th>
                                 <th>Wholesale Price</th>
                                 <th>Retail Price</th>
                                 <th>Description</th>
@@ -757,6 +760,16 @@ $history_result = $conn->query($history_query)->fetchAll();
                                         </div>
                                     </td>
                                     <td><?php echo htmlspecialchars($row['unit_name'] ?? '-'); ?></td>
+                                    <td>
+                                        <?php if (!empty($row['category_name'])): ?>
+                                            <span style="display: inline-flex; align-items: center; gap: 0.35rem; background: #eef2ff; color: #6366f1; padding: 0.25rem 0.75rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600;">
+                                                <i class="fas fa-tag" style="font-size: 0.7rem;"></i>
+                                                <?php echo htmlspecialchars($row['category_name']); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span style="color: #94a3b8; font-size: 0.85rem;">—</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td class="price-cell"><?php echo htmlspecialchars($row['wholesale_price']); ?></td>
                                     <td class="price-cell"><?php echo htmlspecialchars($row['retail_price']); ?></td>
                                     <td><?php echo htmlspecialchars($row['description'] ?? '-'); ?></td>

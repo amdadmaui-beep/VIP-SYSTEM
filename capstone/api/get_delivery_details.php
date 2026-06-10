@@ -93,6 +93,56 @@ if ($delivery_id) {
 }
 
 /**
+ * Sum damaged qty from delivery_damage_report for a line (pending + approved, not rejected).
+ */
+function getReportedDamageQtyForDeliveryLine(PDO $conn, int $delivery_id, int $order_detail_id): float {
+    if ($delivery_id <= 0 || $order_detail_id <= 0) {
+        return 0.0;
+    }
+    try {
+        $t = $conn->query("SHOW TABLES LIKE 'delivery_damage_report'");
+        if (!$t || $t->rowCount() === 0) {
+            return 0.0;
+        }
+        $stmt = $conn->prepare(
+            "SELECT COALESCE(SUM(r.damaged_qty), 0)
+             FROM delivery_damage_report r
+             LEFT JOIN damage_report_reviews rev ON rev.report_id = r.report_id
+             WHERE r.Delivery_ID = ?
+               AND r.Order_detail_ID = ?
+               AND COALESCE(rev.status, 'pending_review') IN ('pending_review', 'approved')"
+        );
+        $stmt->execute([$delivery_id, $order_detail_id]);
+        return (float) $stmt->fetchColumn();
+    } catch (Throwable $e) {
+        return 0.0;
+    }
+}
+
+/**
+ * Attach reported_damage_qty and suggested_received_qty to each checklist item.
+ */
+function enrichDeliveryItemsWithDamageReports(PDO $conn, int $delivery_id, array $items): array {
+    if ($delivery_id <= 0 || empty($items)) {
+        return $items;
+    }
+    foreach ($items as &$item) {
+        $ordered = (float) ($item['ordered_qty'] ?? 0);
+        $order_detail_id = (int) ($item['order_detail_id'] ?? 0);
+        $stored_damage = (float) ($item['damage_qty'] ?? 0);
+        $reported = getReportedDamageQtyForDeliveryLine($conn, $delivery_id, $order_detail_id);
+        $reported = max($stored_damage, $reported);
+        $reported = min($reported, $ordered);
+        $suggested = max(0.0, $ordered - $reported);
+        $item['reported_damage_qty'] = $reported;
+        $item['suggested_received_qty'] = $suggested;
+        $item['line_collectible_amount'] = round($suggested * (float) ($item['unit_price'] ?? 0), 2);
+    }
+    unset($item);
+    return $items;
+}
+
+/**
  * Create missing delivery_detail rows for a given delivery using order_details.
  * This is idempotent (won't duplicate existing (Delivery_ID, Order_detail_ID) pairs).
  */
@@ -291,26 +341,45 @@ if (empty($items)) {
         'items' => []
     ]);
 } else {
+    if ($delivery_id > 0) {
+        $items = enrichDeliveryItemsWithDamageReports($conn, $delivery_id, $items);
+    }
+
     // Compute total from items (Shopee-style) if order total is missing/zero
     $computed_total = 0;
+    $collectible_total = 0;
     foreach ($items as $it) {
         $computed_total += (float)($it['ordered_qty'] ?? 0) * (float)($it['unit_price'] ?? 0);
+        $collectible_total += (float)($it['line_collectible_amount'] ?? ((float)($it['suggested_received_qty'] ?? $it['ordered_qty'] ?? 0) * (float)($it['unit_price'] ?? 0)));
     }
     $ord_total = (float)($delivery['total_amount'] ?? 0);
     if ($ord_total <= 0 && $computed_total > 0) {
         $delivery['total_amount'] = $computed_total;
     }
+    $delivery['collectible_amount'] = round($collectible_total, 2);
+    $delivery['has_reported_damage'] = $collectible_total < $computed_total - 0.009;
     // Keep backward compatibility with older frontend consumers:
     // when proofs list exists, expose first image as proof_of_delivery_path.
     if (!empty($proofs)) {
         $delivery['proof_of_delivery_path'] = (string)$proofs[0]['file_path'];
     }
 
+    $damage_reports_enabled = false;
+    if ($delivery_id > 0) {
+        try {
+            $ddr_chk = $conn->query("SHOW TABLES LIKE 'delivery_damage_report'");
+            $damage_reports_enabled = $ddr_chk && $ddr_chk->rowCount() > 0;
+        } catch (Throwable $e) {
+            $damage_reports_enabled = false;
+        }
+    }
+
     echo json_encode([
         'success' => true,
         'delivery' => $delivery,
         'items' => $items,
-        'proofs' => $proofs
+        'proofs' => $proofs,
+        'damage_reports_enabled' => $damage_reports_enabled,
     ]);
 }
 } catch (Throwable $e) {

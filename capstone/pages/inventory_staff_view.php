@@ -67,6 +67,9 @@ function renderPrepTaskCard(array $order, bool $allowActions): void
                     Order #<?php echo $orderId; ?>
                 </h4>
                 <p class="text-xs font-semibold text-slate-500 mt-1 flex items-center gap-1.5"><i class="fas fa-user text-indigo-400"></i> <?php echo htmlspecialchars((string)$order['customer_name'], ENT_QUOTES, 'UTF-8'); ?></p>
+                <?php if (!empty($order['rider_name'])): ?>
+                    <p class="text-xs font-semibold text-emerald-600 mt-0.5 flex items-center gap-1.5"><i class="fas fa-motorcycle text-emerald-400"></i> <?php echo htmlspecialchars((string)$order['rider_name'], ENT_QUOTES, 'UTF-8'); ?></p>
+                <?php endif; ?>
                 <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
                     <p class="text-[11px] font-bold text-slate-600 bg-slate-100 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md"><i class="far fa-calendar-alt"></i> <span class="text-slate-500">Delivery Date:</span> <span class="text-slate-700"><?php echo htmlspecialchars($deliveryDate, ENT_QUOTES, 'UTF-8'); ?></span></p>
                     <?php if ($deliveryTime !== ''): ?>

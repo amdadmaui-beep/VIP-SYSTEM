@@ -73,13 +73,15 @@ try {
 
 $genericFailure = [
     'message' => 'Invalid username or password.',
-    'captcha' => vip_login_captcha_client_payload(),
 ];
 
 if (!$user) {
     vip_login_regenerate_captcha();
     vip_login_enforce_ip_rate_limit();
-    jsonResponse(false, $genericFailure, 401);
+    jsonResponse(false, [
+        'message' => 'Invalid username or password.',
+        'captcha' => vip_login_captcha_client_payload(),
+    ], 401);
 }
 
 $lockUntil = trim((string)($user['lock_until'] ?? ''));
@@ -117,7 +119,10 @@ if (!$passwordOk || !$active || !$statusOk) {
         ], 429);
     }
 
-    jsonResponse(false, $genericFailure, 401);
+    jsonResponse(false, [
+        'message' => 'Invalid username or password.',
+        'captcha' => vip_login_captcha_client_payload(),
+    ], 401);
 }
 
 $roleId = (int) ($user['Role_ID'] ?? 0);
@@ -204,6 +209,7 @@ function vip_login_enforce_ip_rate_limit(): void
     if (!$result['allowed']) {
         jsonResponse(false, [
             'message' => 'Too many failed login attempts. Try again in ' . $result['retryAfter'] . ' seconds.',
+            'captcha' => vip_login_captcha_client_payload(),
             'retry_after' => $result['retryAfter'],
         ], 429);
     }

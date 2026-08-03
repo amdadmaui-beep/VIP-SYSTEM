@@ -48,7 +48,7 @@
         }
     } catch (Throwable $e) {}
     ?>
-    <main class="p-5">
+    <main class="p-5 min-w-0 w-full max-w-full">
 
         <!-- DASHBOARD TAB -->
         <div id="pane-dashboard" class="tab-content <?php echo $activeTab === 'dashboard' ? 'active staggered-group' : 'hidden'; ?>">
@@ -71,6 +71,61 @@
                     <div class="text-[10px] font-bold text-rose-100 tracking-wider uppercase">Pending Prep</div>
                 </div>
             </div>
+
+            <!-- Rider Availability -->
+            <?php
+            $has_any_rider = false;
+            foreach ($rider_groups as $g) { if (!empty($g)) { $has_any_rider = true; break; } }
+            ?>
+            <?php if ($has_any_rider): ?>
+            <div class="mb-4 rounded-2xl overflow-hidden shadow-md border border-indigo-100 bg-white">
+                <div class="bg-gradient-to-r from-indigo-500 to-violet-600 px-4 py-3.5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                            <i class="fas fa-motorcycle text-white text-base"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="text-white font-black text-sm tracking-wide">Rider Availability</div>
+                            <div class="text-white text-[11px] font-bold opacity-90 truncate">
+                                <?php echo count($rider_groups['Available'] ?? []); ?> Available
+                                &middot; <?php echo count($rider_groups['On Delivery'] ?? []); ?> On Delivery
+                                &middot; <?php echo count($rider_groups['Off Duty'] ?? []); ?> Off Duty
+                            </div>
+                        </div>
+                        <?php foreach (['Available' => 'emerald', 'On Delivery' => 'amber', 'Off Duty' => 'red'] as $status => $color):
+                            $cnt = count($rider_groups[$status] ?? []);
+                        ?>
+                        <span class="shrink-0 px-2 py-1 rounded-lg bg-white/15 text-white text-[10px] font-black">
+                            <i class="fas fa-circle text-[5px] text-<?php echo $color; ?>-300 mr-1 align-middle"></i><?php echo $cnt; ?>
+                        </span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <div class="divide-y divide-slate-50">
+                    <?php foreach (['Available' => 'emerald', 'On Delivery' => 'amber', 'Off Duty' => 'red'] as $status => $color):
+                        $rows = $rider_groups[$status] ?? [];
+                        if (empty($rows)) continue;
+                    ?>
+                    <div class="px-4 py-2.5">
+                        <div class="flex items-center gap-1.5 mb-1.5">
+                            <i class="fas fa-circle text-[6px] text-<?php echo $color; ?>-500"></i>
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-<?php echo $color; ?>-600"><?php echo $status; ?> (<?php echo count($rows); ?>)</span>
+                        </div>
+                        <div class="space-y-1">
+                            <?php foreach ($rows as $r):
+                                $load = (int)($r['active_delivery_count'] ?? 0);
+                            ?>
+                            <div class="flex items-center justify-between text-sm pl-3">
+                                <span class="font-semibold text-slate-800"><?php echo htmlspecialchars($r['name'] ?? 'Rider'); ?></span>
+                                <span class="text-[10px] font-medium <?php echo $load > 0 ? 'text-amber-600' : 'text-slate-400'; ?>"><?php echo $load; ?> deliver<?php echo $load !== 1 ? 'ies' : 'y'; ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Overdue Alert -->
             <?php if ($overdue_orders_count > 0): ?>
@@ -116,16 +171,51 @@
             <?php endif; ?>
 
             <?php if (!empty($needsAttentionOrders)): ?>
-            <div class="mb-5 rounded-2xl border border-amber-200 bg-white overflow-hidden shadow-sm">
-                <div class="flex items-center gap-3 bg-amber-50 px-5 py-4 border-b border-amber-100">
-                    <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
-                        <i class="fas fa-exclamation-triangle text-sm"></i>
+            <div class="mb-5 rounded-2xl border border-amber-200 bg-white shadow-sm w-full min-w-0 needs-attention-block">
+                <div class="flex flex-col gap-2 bg-amber-50 px-4 py-4 border-b border-amber-100">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="w-9 h-9 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                            <i class="fas fa-exclamation-triangle text-sm"></i>
+                        </div>
+                        <span class="text-sm font-bold text-amber-800 leading-snug">Orders Needing Attention</span>
                     </div>
-                    <span class="text-sm font-bold text-amber-800">Orders Needing Attention</span>
-                    <span class="ml-auto text-[10px] font-bold text-amber-600 bg-amber-100 px-3 py-1.5 rounded-lg">Pack shortage, then Record Stock In</span>
+                    <span class="text-[10px] font-bold text-amber-700 bg-amber-100 px-3 py-1.5 rounded-lg self-start leading-relaxed">Pack shortage — record stock in first</span>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-xs">
+
+                <!-- Mobile: stacked cards (all fields visible, no horizontal scroll) -->
+                <div class="needs-attention-cards divide-y divide-amber-100 md:hidden">
+                    <?php foreach ($needsAttentionOrders as $na): ?>
+                    <?php $toPack = max(0, (int)$na['ordered_qty'] - (int)$na['available_stock']); ?>
+                    <article class="p-4 bg-white">
+                        <div class="flex items-start justify-between gap-2 mb-3">
+                            <div class="min-w-0">
+                                <p class="text-xs font-black text-indigo-600">Order #<?php echo (int)$na['Order_ID']; ?></p>
+                                <p class="text-sm font-bold text-slate-800 truncate"><?php echo htmlspecialchars($na['customer_name']); ?></p>
+                                <p class="text-xs font-semibold text-slate-500 truncate"><?php echo htmlspecialchars($na['product_name']); ?></p>
+                            </div>
+                            <span class="shrink-0 rounded-xl bg-rose-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-rose-700">Short <?php echo $toPack; ?></span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-wide text-slate-400">Ordered</p>
+                                <p class="text-sm font-black text-slate-800"><?php echo (int)$na['ordered_qty']; ?></p>
+                            </div>
+                            <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-wide text-slate-400">In Stock</p>
+                                <p class="text-sm font-black text-slate-800"><?php echo (int)$na['available_stock']; ?></p>
+                            </div>
+                            <div class="rounded-xl bg-rose-50 border border-rose-100 px-2 py-2 text-center">
+                                <p class="text-[9px] font-bold uppercase tracking-wide text-rose-500">To Pack</p>
+                                <p class="text-sm font-black text-rose-600"><?php echo $toPack; ?></p>
+                            </div>
+                        </div>
+                    </article>
+                    <?php endforeach; ?>
+                </div>
+
+                <!-- Tablet/desktop: scrollable table -->
+                <div class="needs-attention-table-scroll hidden md:block">
+                    <table class="needs-attention-table w-full text-xs">
                         <thead>
                             <tr class="bg-amber-50/50 border-b border-amber-100">
                                 <th class="text-left px-4 py-3 font-bold text-amber-700">Order</th>
@@ -156,8 +246,8 @@
 
             <!-- Quick Actions -->
             <div class="grid grid-cols-2 gap-3">
-                <button onclick="openProductionModal()" class="p-4 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-plus-circle"></i> Record Stock In
+                <button onclick="openBatchStockInModal()" class="p-4 bg-indigo-600 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-plus-circle"></i> Stock In
                 </button>
                 <button onclick="openAdjustmentModal()" class="p-4 bg-slate-800 text-white rounded-2xl font-bold text-sm shadow-lg shadow-slate-200 hover:bg-slate-900 transition-all flex items-center justify-center gap-2">
                     <i class="fas fa-edit"></i> Manual Adjustment
@@ -186,8 +276,8 @@
                     <i class="fas fa-exclamation-triangle"></i> Review Damage Reports (<?php echo $ddr_pending_n; ?>)
                 </a>
                 <?php endif; ?>
-                <button onclick="openProductionModal()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2">
-                    <i class="fas fa-plus-circle"></i> Record Stock In
+                <button onclick="openBatchStockInModal()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2">
+                    <i class="fas fa-plus-circle"></i> Stock In
                 </button>
                 <button onclick="openAdjustmentModal()" class="w-full py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-bold text-sm shadow-lg shadow-slate-200 transition-all flex items-center justify-center gap-2">
                     <i class="fas fa-edit"></i> Manual Adjustment

@@ -18,14 +18,27 @@ if (empty($_SESSION['login_csrf'])) {
     $_SESSION['login_csrf'] = bin2hex(random_bytes(32));
 }
 
-$_SESSION['login_captcha_n1'] = random_int(1, 12);
-$_SESSION['login_captcha_n2'] = random_int(1, 12);
-$_SESSION['login_captcha_expected'] = (int)$_SESSION['login_captcha_n1'] + (int)$_SESSION['login_captcha_n2'];
+$captchaId = bin2hex(random_bytes(8));
+$captchaN1 = random_int(1, 12);
+$captchaN2 = random_int(1, 12);
+
+$captchaMap = is_array($_SESSION['login_captchas'] ?? null) ? $_SESSION['login_captchas'] : [];
+$captchaMap[$captchaId] = [
+    'n1' => $captchaN1,
+    'n2' => $captchaN2,
+    'expected' => $captchaN1 + $captchaN2,
+];
+if (count($captchaMap) > 10) {
+    $captchaMap = array_slice($captchaMap, -10, 10, true);
+}
+$_SESSION['login_captchas'] = $captchaMap;
+$_SESSION['login_captcha_id'] = $captchaId;
 
 $snapshot  = vip_login_snapshot($conn);
-$captchaN1 = (int)$_SESSION['login_captcha_n1'];
-$captchaN2 = (int)$_SESSION['login_captcha_n2'];
 $csrfToken = (string)$_SESSION['login_csrf'];
+
+$loginFlash = (string)($_SESSION['login_flash'] ?? '');
+unset($_SESSION['login_flash']);
 
 function vip_h($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
@@ -209,12 +222,13 @@ input[type=number] { -moz-appearance: textfield; }
                     </div>
 
                     <!-- Error bar -->
-                    <div id="errBar" class="hidden animate-slide-2 bg-rose-50 text-rose-600 px-5 py-4 rounded-2xl text-sm font-semibold border border-rose-100 items-start gap-3 mb-8 shadow-sm">
+                    <div id="errBar" class="<?php echo $loginFlash !== '' ? 'flex' : 'hidden'; ?> animate-slide-2 bg-rose-50 text-rose-600 px-5 py-4 rounded-2xl text-sm font-semibold border border-rose-100 items-start gap-3 mb-8 shadow-sm">
                         <i data-lucide="alert-circle" class="w-5 h-5 shrink-0 text-rose-500"></i>
-                        <span id="errText" class="pt-0.5"></span>
+                        <span id="errText" class="pt-0.5"><?php echo vip_h($loginFlash); ?></span>
                     </div>
 
                     <input type="hidden" id="csrfToken" value="<?php echo vip_h($csrfToken); ?>">
+                    <input type="hidden" id="captchaId" value="<?php echo vip_h($captchaId); ?>">
 
                     <!-- Form -->
                     <div class="space-y-6">
@@ -413,6 +427,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const u = document.getElementById('usernameInput').value.trim();
         const p = pwInput.value;
         const c = parseInt(document.getElementById('captchaInput').value, 10);
+        const captchaId = document.getElementById('captchaId').value;
         const csrf = document.getElementById('csrfToken').value;
 
         hideError();
@@ -429,7 +444,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('api/auth/session_login.php', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ username:u, password:p, captcha:c, csrf })
+                body: JSON.stringify({ username:u, password:p, captcha:c, captcha_id: captchaId, csrf })
             });
             data = await res.json().catch(() => ({}));
             
@@ -437,16 +452,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.location.href = data.redirect;
                 return;
             }
+
+            const retryAfter = Number(data.retry_after || (res.status === 429 ? 60 : 0));
             
             showError(data.message || 'Login failed. Please try again.');
 
             if (data.captcha) {
                 document.getElementById('captchaEq').innerHTML = `${data.captcha.n1} <span class="text-brand-500 mx-1">+</span> ${data.captcha.n2}`;
+                if (data.captcha.id) {
+                    document.getElementById('captchaId').value = data.captcha.id;
+                }
                 document.getElementById('captchaInput').value = '';
             }
 
-            if (data.retry_after) {
-                let remaining = data.retry_after;
+            if (retryAfter > 0) {
+                let remaining = retryAfter;
                 loginBtn.disabled = true;
                 btnText.textContent = `Retry in ${remaining}s`;
                 const timer = setInterval(() => {
@@ -465,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) {
             showError('Network error. Check your connection.');
         } finally {
-            if (!data || !data.retry_after) {
+            if (!data || !(Number(data.retry_after) > 0)) {
                 loginBtn.disabled = false;
                 btnText.textContent = 'Continue to Workspace';
                 btnIcon.innerHTML = '<i data-lucide="arrow-right" class="w-5 h-5"></i>';

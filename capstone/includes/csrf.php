@@ -32,6 +32,18 @@ if (!function_exists('rotateCsrfToken')) {
             $_SESSION['csrf_prev_token_time'] = $current_time;
         }
 
+        // Keep recently issued tokens valid so open tabs and pollers survive
+        // rotations instead of failing with "Token mismatch" spam.
+        $issued = (array)($_SESSION['csrf_issued_tokens'] ?? []);
+        if (!empty($current_token) && $current_time > 0) {
+            $issued[$current_token] = $current_time;
+        }
+        if (count($issued) > 6) {
+            asort($issued, SORT_NUMERIC); // oldest first
+            $issued = array_slice($issued, -6, 6, true);
+        }
+        $_SESSION['csrf_issued_tokens'] = $issued;
+
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
         $_SESSION['csrf_token_time'] = time();
 
@@ -141,32 +153,34 @@ if (!function_exists('validateCsrfToken')) {
         $lifetime = defined('CSRF_TOKEN_LIFETIME') ? CSRF_TOKEN_LIFETIME : 3600;
         $grace = defined('CSRF_GRACE_WINDOW') ? CSRF_GRACE_WINDOW : 600;
 
-        // Check if token exists
-        if (empty($token) || (empty($stored_token) && empty($prev_token))) {
+        if (empty($token)) {
             error_log("CSRF validation failed: Missing token");
             return false;
         }
 
-        $is_current_match = (!empty($stored_token) && hash_equals($stored_token, $token));
-        $is_prev_match = (!empty($prev_token) && hash_equals($prev_token, $token));
         $valid = false;
 
         // Repair legacy sessions that have a token but no timestamp.
-        if ($is_current_match && $token_time <= 0) {
+        if ($token_time <= 0 && !empty($stored_token) && hash_equals($stored_token, $token)) {
             $_SESSION['csrf_token_time'] = $now;
             $token_time = $now;
         }
 
-        if ($is_current_match && $token_time > 0 && ($now - $token_time) <= $lifetime) {
-            $valid = true;
-        } elseif ($is_prev_match && $prev_token_time > 0 && ($now - $prev_token_time) <= ($lifetime + $grace)) {
-            // Accept recently-rotated token from stale tab and refresh.
-            $valid = true;
-            rotateCsrfToken();
-        } elseif ($is_current_match && $token_time > 0 && ($now - $token_time) <= ($lifetime + $grace)) {
-            // Soft grace for current token, then refresh to recover seamlessly.
-            $valid = true;
-            rotateCsrfToken();
+        // Accept the current token, the previous token, or any recently issued
+        // token within its lifetime+grace window. Never rotate on success here,
+        // otherwise every stale tab's next poll invalidates another tab's token.
+        $candidates = [];
+        if (!empty($stored_token)) $candidates[$stored_token] = $token_time;
+        if (!empty($prev_token))   $candidates[$prev_token] = $prev_token_time;
+        foreach ((array)($_SESSION['csrf_issued_tokens'] ?? []) as $t => $ts) {
+            $candidates[(string)$t] = (int)$ts;
+        }
+
+        foreach ($candidates as $cand => $ts) {
+            if ($ts > 0 && ($now - $ts) <= ($lifetime + $grace) && hash_equals($cand, $token)) {
+                $valid = true;
+                break;
+            }
         }
 
         if (!$valid) {

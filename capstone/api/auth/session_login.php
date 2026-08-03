@@ -16,7 +16,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonResponse(false, ['message' => 'Method not allowed'], 405);
 }
 
-enforceRateLimit(rateLimitKey('login'), 5, 30);
+const VIP_LOGIN_MAX_ATTEMPTS = 5;
+const VIP_LOGIN_LOCKOUT_SECONDS = 60;
 
 $raw = file_get_contents('php://input');
 $body = json_decode($raw ?: '', true);
@@ -28,20 +29,26 @@ $username = trim((string) ($body['username'] ?? ''));
 $password = (string) ($body['password'] ?? '');
 $captchaIn = $body['captcha'] ?? '';
 $captcha = is_numeric($captchaIn) ? (int) $captchaIn : null;
+$captchaIdIn = (string) ($body['captcha_id'] ?? '');
 $csrf = (string) ($body['csrf'] ?? '');
 
 if ($csrf === '' || !hash_equals((string) ($_SESSION['login_csrf'] ?? ''), $csrf)) {
     jsonResponse(false, ['message' => 'Invalid session. Please refresh the page.'], 403);
 }
 
-$expected = $_SESSION['login_captcha_expected'] ?? null;
-if ($expected === null || $captcha !== (int) $expected) {
+$captchaEntry = null;
+if ($captchaIdIn !== '' && is_array($_SESSION['login_captchas'] ?? null)) {
+    $captchaEntry = $_SESSION['login_captchas'][$captchaIdIn] ?? null;
+}
+$expected = is_array($captchaEntry) ? (int) ($captchaEntry['expected'] ?? null) : null;
+if ($expected === null || $captcha !== $expected) {
     vip_login_regenerate_captcha();
     jsonResponse(false, [
         'message' => 'Invalid verification answer.',
         'captcha' => vip_login_captcha_client_payload(),
     ], 400);
 }
+unset($_SESSION['login_captchas'][$captchaIdIn]);
 
 if ($username === '' || $password === '') {
     vip_login_regenerate_captcha();
@@ -71,19 +78,26 @@ $genericFailure = [
 
 if (!$user) {
     vip_login_regenerate_captcha();
+    vip_login_enforce_ip_rate_limit();
     jsonResponse(false, $genericFailure, 401);
 }
 
 $lockUntil = trim((string)($user['lock_until'] ?? ''));
 $lockUntilTs = strtotime($lockUntil);
-if ($lockUntil !== '' && $lockUntilTs !== false && $lockUntilTs > time()) {
-    $retryAfter = $lockUntilTs - time();
-    vip_login_regenerate_captcha();
-    jsonResponse(false, [
-        'message' => "Too many failed login attempts. Try again in {$retryAfter} seconds.",
-        'captcha' => vip_login_captcha_client_payload(),
-        'retry_after' => $retryAfter,
-    ], 429);
+if ($lockUntil !== '' && $lockUntilTs !== false) {
+    if ($lockUntilTs > time()) {
+        $retryAfter = $lockUntilTs - time();
+        vip_login_regenerate_captcha();
+        jsonResponse(false, [
+            'message' => "Too many failed login attempts. Try again in {$retryAfter} seconds.",
+            'captcha' => vip_login_captcha_client_payload(),
+            'retry_after' => $retryAfter,
+        ], 429);
+    }
+
+    vip_login_clear_failed_attempts($conn, (int) $user['User_ID']);
+    $user['login_attempts'] = 0;
+    $user['lock_until'] = null;
 }
 
 $active = isset($user['is_active']) ? (int) $user['is_active'] === 1 : true;
@@ -91,8 +105,18 @@ $statusOk = !isset($user['status']) || strtolower((string) $user['status']) !== 
 $passwordOk = vipPasswordVerify($password, (string)$user['password']);
 
 if (!$passwordOk || !$active || !$statusOk) {
-    vip_login_record_failed_attempt($conn, (int)$user['User_ID'], (int)($user['login_attempts'] ?? 0));
+    $lockout = vip_login_record_failed_attempt($conn, (int) $user['User_ID'], (int) ($user['login_attempts'] ?? 0));
     vip_login_regenerate_captcha();
+    vip_login_enforce_ip_rate_limit();
+
+    if ($lockout['locked']) {
+        jsonResponse(false, [
+            'message' => 'Too many failed login attempts. Try again in ' . $lockout['retry_after'] . ' seconds.',
+            'captcha' => vip_login_captcha_client_payload(),
+            'retry_after' => $lockout['retry_after'],
+        ], 429);
+    }
+
     jsonResponse(false, $genericFailure, 401);
 }
 
@@ -107,7 +131,7 @@ $_SESSION['full_name'] = (string) ($user['full_name'] ?? '');
 $_SESSION['user_name'] = (string) ($user['user_name'] ?? '');
 $_SESSION['last_activity'] = time();
 
-unset($_SESSION['login_captcha_expected'], $_SESSION['login_captcha_n1'], $_SESSION['login_captcha_n2']);
+unset($_SESSION['login_captchas'], $_SESSION['login_captcha_id']);
 
 $redirect = vip_post_login_redirect_relative($conn, $roleId);
 
@@ -130,16 +154,29 @@ jsonResponse(true, [
 
 function vip_login_regenerate_captcha(): void
 {
-    $_SESSION['login_captcha_n1'] = random_int(1, 12);
-    $_SESSION['login_captcha_n2'] = random_int(1, 12);
-    $_SESSION['login_captcha_expected'] = (int) $_SESSION['login_captcha_n1'] + (int) $_SESSION['login_captcha_n2'];
+    $id = bin2hex(random_bytes(8));
+    $n1 = random_int(1, 12);
+    $n2 = random_int(1, 12);
+
+    $map = is_array($_SESSION['login_captchas'] ?? null) ? $_SESSION['login_captchas'] : [];
+    $map[$id] = ['n1' => $n1, 'n2' => $n2, 'expected' => $n1 + $n2];
+    if (count($map) > 10) {
+        $map = array_slice($map, -10, 10, true);
+    }
+    $_SESSION['login_captchas'] = $map;
+    $_SESSION['login_captcha_id'] = $id;
 }
 
 function vip_login_captcha_client_payload(): array
 {
+    $id = (string) ($_SESSION['login_captcha_id'] ?? '');
+    $entry = ($id !== '' && is_array($_SESSION['login_captchas'] ?? null) && isset($_SESSION['login_captchas'][$id]))
+        ? $_SESSION['login_captchas'][$id]
+        : null;
     return [
-        'n1' => (int) ($_SESSION['login_captcha_n1'] ?? 0),
-        'n2' => (int) ($_SESSION['login_captcha_n2'] ?? 0),
+        'id' => $id,
+        'n1' => (int) ($entry['n1'] ?? 0),
+        'n2' => (int) ($entry['n2'] ?? 0),
     ];
 }
 
@@ -161,21 +198,37 @@ function vip_login_ensure_lockout_columns(PDO $conn): bool
     }
 }
 
-function vip_login_record_failed_attempt(PDO $conn, int $userId, int $currentAttempts): void
+function vip_login_enforce_ip_rate_limit(): void
+{
+    $result = checkRateLimit(rateLimitKey('login'), VIP_LOGIN_MAX_ATTEMPTS, VIP_LOGIN_LOCKOUT_SECONDS);
+    if (!$result['allowed']) {
+        jsonResponse(false, [
+            'message' => 'Too many failed login attempts. Try again in ' . $result['retryAfter'] . ' seconds.',
+            'retry_after' => $result['retryAfter'],
+        ], 429);
+    }
+}
+
+function vip_login_record_failed_attempt(PDO $conn, int $userId, int $currentAttempts): array
 {
     if ($userId <= 0) {
-        return;
+        return ['locked' => false, 'retry_after' => 0, 'attempts' => 0];
     }
 
     $nextAttempts = $currentAttempts + 1;
-    $lockUntil = $nextAttempts >= 5 ? date('Y-m-d H:i:s', strtotime('+1 minute')) : null;
+    $locked = $nextAttempts >= VIP_LOGIN_MAX_ATTEMPTS;
+    $lockUntil = $locked ? date('Y-m-d H:i:s', time() + VIP_LOGIN_LOCKOUT_SECONDS) : null;
+    $retryAfter = $locked ? VIP_LOGIN_LOCKOUT_SECONDS : 0;
 
     try {
         $stmt = $conn->prepare('UPDATE user SET login_attempts = ?, lock_until = ? WHERE User_ID = ?');
         $stmt->execute([$nextAttempts, $lockUntil, $userId]);
     } catch (Throwable $e) {
         error_log('Unable to record failed login attempt for user ' . $userId . ': ' . $e->getMessage());
+        return ['locked' => false, 'retry_after' => 0, 'attempts' => $nextAttempts];
     }
+
+    return ['locked' => $locked, 'retry_after' => $retryAfter, 'attempts' => $nextAttempts];
 }
 
 function vip_login_clear_failed_attempts(PDO $conn, int $userId): void

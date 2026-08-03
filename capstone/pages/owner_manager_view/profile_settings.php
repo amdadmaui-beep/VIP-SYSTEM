@@ -109,9 +109,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ((int)$file['error'] !== UPLOAD_ERR_OK) {
                 $post_errors[] = 'Failed to upload profile picture.';
             } else {
-                $maxBytes = 2 * 1024 * 1024;
+                $maxBytes = 5 * 1024 * 1024;
                 if ((int)$file['size'] > $maxBytes) {
-                    $post_errors[] = 'Profile picture must be 2MB or less.';
+                    $post_errors[] = 'Profile picture must be 5MB or less.';
                 }
 
                 $tmp = (string)$file['tmp_name'];
@@ -910,7 +910,7 @@ $changePasswordApiUrl = rtrim($apiBase, '/') . '/api/management_change_password.
 
                 <div class="pfp-section">
                     <?php if ($profilePictureSrc !== ''): ?>
-                        <img src="<?php echo htmlspecialchars($profilePictureSrc, ENT_QUOTES, 'UTF-8'); ?>" alt="Profile picture" class="pfp-preview" id="pfpPreview" onclick="openPfpModal()">
+                        <img src="<?php echo htmlspecialchars($profilePictureSrc, ENT_QUOTES, 'UTF-8'); ?>" alt="Profile picture" class="pfp-preview" id="pfpPreview" onclick="openPfpModal()" onerror="pfpLoadFallback(this)">
                     <?php else: ?>
                         <div class="pfp-fallback" id="pfpFallback" onclick="openPfpModal()"><?php echo htmlspecialchars(strtoupper(substr((string)($profile['full_name'] ?: $profile['user_name']), 0, 1)), ENT_QUOTES, 'UTF-8'); ?></div>
                     <?php endif; ?>
@@ -1075,15 +1075,17 @@ $changePasswordApiUrl = rtrim($apiBase, '/') . '/api/management_change_password.
     const CHANGE_PASSWORD_API_URL = <?php echo json_encode($changePasswordApiUrl, JSON_UNESCAPED_SLASHES); ?>;
     const PROFILE_CSRF_TOKEN = <?php echo json_encode(getCsrfToken(), JSON_UNESCAPED_SLASHES); ?>;
 
-    function updateFileName(input) {
-        const fileName = document.getElementById('fileName');
-        if (input.files && input.files[0]) {
-            fileName.textContent = input.files[0].name;
-        } else {
-            fileName.textContent = 'No file chosen';
-        }
+    function pfpLoadFallback(img) {
+        const initialInput = document.getElementById('userInitial');
+        const initial = initialInput ? initialInput.value : 'U';
+        const fb = document.createElement('div');
+        fb.className = 'pfp-fallback';
+        fb.id = 'pfpFallback';
+        fb.textContent = initial;
+        fb.onclick = openPfpModal;
+        img.parentNode.replaceChild(fb, img);
     }
-    
+
     function toggleRemovePfp() {
         const checkbox = document.getElementById('removePfp');
         const fileInput = document.getElementById('profilePicture');
@@ -1309,6 +1311,26 @@ $changePasswordApiUrl = rtrim($apiBase, '/') . '/api/management_change_password.
                 confirmButton: 'rounded-xl font-bold'
             }
         });
+    });
+    <?php endif; ?>
+
+    // Validation errors on load
+    <?php if (!empty($errors)): ?>
+    document.addEventListener('DOMContentLoaded', function() {
+        const items = Array.from(document.querySelectorAll('.alert-danger li')).map(li => li.textContent.trim());
+        if (items.length) {
+            Swal.fire({
+                title: 'Profile Not Saved',
+                html: items.map(i => '<div style="text-align:left;">• ' + i.replace(/</g, '&lt;') + '</div>').join(''),
+                icon: 'error',
+                confirmButtonText: 'OK',
+                confirmButtonColor: '#6366f1',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl font-bold'
+                }
+            });
+        }
     });
     <?php endif; ?>
 </script>

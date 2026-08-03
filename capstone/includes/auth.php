@@ -79,8 +79,29 @@ function authDeny(?string $message = null, int $status = 401): void {
         exit;
     }
 
-    $redirect_path = file_exists('login.php') ? 'login.php' : '../login.php';
-    header('Location: ' . $redirect_path);
+    if ($message !== null && $message !== '') {
+        if (session_status() !== PHP_SESSION_ACTIVE) {
+            session_start();
+        }
+        $_SESSION['login_flash'] = $message;
+        session_write_close();
+    }
+
+    $loginUrl = null;
+    $scriptFile = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_FILENAME'] ?? ''));
+    if ($scriptFile !== '' && $scriptFile !== '/') {
+        $fileDir = dirname($scriptFile);
+        $up = 0;
+        while ($up < 10) {
+            if (file_exists($fileDir . '/login.php')) {
+                $loginUrl = $up === 0 ? 'login.php' : str_repeat('../', $up) . 'login.php';
+                break;
+            }
+            $fileDir = dirname($fileDir);
+            $up++;
+        }
+    }
+    header('Location: ' . ($loginUrl ?? '../login.php'));
     exit;
 }
 

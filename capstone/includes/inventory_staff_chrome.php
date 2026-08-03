@@ -371,8 +371,8 @@ function notifyLowStockToStaff(PDO $conn): array
     }
 
     $result = sendLowStockAlertEmail($recipients, $lowProducts);
-    if (!empty($result['sent'])) {
-        logLowStockEmailSent($conn, count($lowProducts), (int)$result['sent']);
+    if (!empty($result['ok']) && !empty($result['sent_to'])) {
+        logLowStockEmailSent($conn, count($lowProducts), (int)$result['sent_to']);
     }
     return $result;
 }

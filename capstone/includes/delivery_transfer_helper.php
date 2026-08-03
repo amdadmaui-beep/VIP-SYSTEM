@@ -4,6 +4,26 @@ declare(strict_types=1);
 require_once __DIR__ . '/rider_availability_helper.php';
 
 /**
+ * Ensure delivery_transfers audit table exists (idempotent).
+ */
+function ensureDeliveryTransfersTable(PDO $conn): void
+{
+    $conn->exec("
+        CREATE TABLE IF NOT EXISTS delivery_transfers (
+            transfer_id INT AUTO_INCREMENT PRIMARY KEY,
+            Delivery_ID INT NOT NULL,
+            from_rider_id INT NULL,
+            to_rider_id INT NOT NULL,
+            transferred_by_user_id INT NOT NULL,
+            reason VARCHAR(255) NOT NULL DEFAULT '',
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_delivery_transfers_delivery (Delivery_ID),
+            INDEX idx_delivery_transfers_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    ");
+}
+
+/**
  * Statuses that must stay with the original rider (remittance / finished).
  */
 function deliveryStatusesExcludedFromTransfer(): array

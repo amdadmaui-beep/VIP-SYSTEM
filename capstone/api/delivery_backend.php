@@ -24,6 +24,7 @@ $dashboard_ids = getDashboardRoleIds($conn);
 $allowed = array_unique(array_merge($rider_ids, $dashboard_ids));
 requireRole(empty($allowed) ? [1] : $allowed);
 prepTasksEnsureSchema($conn);
+ensureDeliveryTransfersTable($conn);
 
 function deliveryHasColumn($conn, $column) {
     static $cache = [];

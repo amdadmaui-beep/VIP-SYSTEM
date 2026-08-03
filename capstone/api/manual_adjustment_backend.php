@@ -13,6 +13,58 @@ require_once __DIR__ . '/../includes/delivery_damage_ui_helper.php';
 $allowed = array_unique(array_merge(getDashboardRoleIds($conn), getInventoryStaffRoleIds($conn)));
 requireRole(empty($allowed) ? [1] : $allowed);
 
+if (!function_exists('sanitizeManualAdjustmentRedirect')) {
+    function sanitizeManualAdjustmentRedirect(string $url): string
+    {
+        $url = trim($url);
+        if (preg_match('#^(manual_adjustment\.php|\.\./pages/manual_adjustment\.php|\.\./pages/inventory_staff\.php)(\?[a-zA-Z0-9_=&%-]*)?$#', $url)) {
+            return $url;
+        }
+        return 'manual_adjustment.php';
+    }
+}
+
+if (!function_exists('manualAdjustmentStockOrderBy')) {
+    function manualAdjustmentStockOrderBy(PDO $conn): array
+    {
+        $si_cols = $conn->query('SHOW COLUMNS FROM stockin_inventory')->fetchAll(PDO::FETCH_COLUMN);
+        $si_id_col = in_array('Inventory_ID', $si_cols, true) ? 'Inventory_ID' : 'Inventory_ID';
+        $si_time_cols = [];
+        if (in_array('updated_at', $si_cols, true)) {
+            $si_time_cols[] = 'updated_at';
+        }
+        if (in_array('created_at', $si_cols, true)) {
+            $si_time_cols[] = 'created_at';
+        }
+        if (in_array('date_in', $si_cols, true)) {
+            $si_time_cols[] = 'date_in';
+        }
+        if (in_array('inventory_date', $si_cols, true)) {
+            $si_time_cols[] = 'inventory_date';
+        }
+        $si_order_expr = !empty($si_time_cols) ? ('COALESCE(' . implode(', ', $si_time_cols) . ')') : $si_id_col;
+
+        return [
+            'id_col' => $si_id_col,
+            'order_by' => "{$si_order_expr} DESC, {$si_id_col} DESC",
+        ];
+    }
+}
+
+if (!function_exists('manualAdjustmentFetchDbQuantity')) {
+    function manualAdjustmentFetchDbQuantity(PDO $conn, int $productId, string $orderBy): float
+    {
+        if ($productId <= 0) {
+            return 0.0;
+        }
+        $stmt = $conn->prepare("SELECT quantity FROM stockin_inventory WHERE Product_ID = ? ORDER BY {$orderBy} LIMIT 1");
+        $stmt->execute([$productId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        return $row !== false ? floatval($row['quantity']) : 0.0;
+    }
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
     if (!validateCsrfToken(false)) {
@@ -41,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
     $reason = trim($_POST['reason'] ?? '');
     $remarks = trim($_POST['remarks'] ?? '');
     $user_id = intval($_SESSION['user_id'] ?? 0);
-    $redirect_url = $_POST['redirect_url'] ?? 'manual_adjustment.php';
+    $redirect_url = sanitizeManualAdjustmentRedirect((string)($_POST['redirect_url'] ?? 'manual_adjustment.php'));
 
     // Restriction: Owner (Role_ID 1) is restricted to view-only mode
     if (isset($_SESSION['user_role']) && (int)$_SESSION['user_role'] === 1) {
@@ -100,6 +152,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
         $valid_adjustments = [];
         $changed_product_names = [];
         $batch_errors = [];
+        $stock_order = manualAdjustmentStockOrderBy($conn);
 
         $valid_reasons_list = getAdjustmentReasonOptions($conn);
 
@@ -111,19 +164,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
             foreach ($adjustments_raw as $pid => $actual_qty) {
                 $pid = intval($pid);
                 $actual_qty = floatval($actual_qty);
-                $current_qty = isset($current_qtys_raw[$pid]) ? floatval($current_qtys_raw[$pid]) : 0;
+                $displayed_qty = isset($current_qtys_raw[$pid]) ? floatval($current_qtys_raw[$pid]) : null;
 
-                if ($actual_qty == $current_qty) continue;
-                if ($actual_qty < 0) continue;
+                if ($actual_qty < 0) {
+                    continue;
+                }
+
+                // Only process rows the user actually edited in the form.
+                if ($displayed_qty !== null && $actual_qty == $displayed_qty) {
+                    continue;
+                }
 
                 $check_product = $conn->prepare("SELECT Product_ID, product_name, is_discontinued FROM products WHERE Product_ID = ?");
                 $check_product->execute([$pid]);
                 $product_data = $check_product->fetch(PDO::FETCH_ASSOC);
-                if (!$product_data) continue;
-                if ($product_data['is_discontinued'] == 1) continue;
+                if (!$product_data) {
+                    continue;
+                }
+                if ($product_data['is_discontinued'] == 1) {
+                    continue;
+                }
 
-                $adjustment_value = $actual_qty - $current_qty;
-                if (abs($adjustment_value) > 999999) continue;
+                $db_qty = manualAdjustmentFetchDbQuantity($conn, $pid, $stock_order['order_by']);
+                if ($actual_qty == $db_qty) {
+                    continue;
+                }
+
+                $adjustment_value = $actual_qty - $db_qty;
+                if (abs($adjustment_value) > 999999) {
+                    continue;
+                }
 
                 $product_reason = isset($reasons_raw[$pid]) ? normalizeAdjustmentReasonValue($conn, trim($reasons_raw[$pid])) : '';
                 if (empty($product_reason)) {
@@ -138,9 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
                 $valid_adjustments[] = [
                     'product_id' => $pid,
                     'product_name' => $product_data['product_name'],
-                    'current_qty' => $current_qty,
                     'actual_qty' => $actual_qty,
-                    'adjustment_value' => $adjustment_value,
                     'reason' => $product_reason,
                 ];
                 $changed_product_names[] = $product_data['product_name'];
@@ -182,7 +250,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
 
             foreach ($valid_adjustments as $adj) {
                 $pid = $adj['product_id'];
-                $adjustment_value = $adj['adjustment_value'];
+                $actual_qty = (float)$adj['actual_qty'];
                 $product_name = $adj['product_name'];
                 $product_reason = $adj['reason'];
 
@@ -190,7 +258,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_adjustment'])) {
                 $stmt->execute([$pid]);
                 $db_row = $stmt->fetch(PDO::FETCH_ASSOC);
                 $old_quantity = $db_row !== false ? floatval($db_row['quantity']) : 0;
-                $new_quantity = $old_quantity + $adjustment_value;
+                $adjustment_value = $actual_qty - $old_quantity;
+                $new_quantity = $actual_qty;
+
+                if ($adjustment_value == 0.0) {
+                    continue;
+                }
 
                 if ($new_quantity < 0) {
                     throw new Exception("Adjustment for {$product_name} would result in negative inventory.");

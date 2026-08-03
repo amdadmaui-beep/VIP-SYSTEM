@@ -15,6 +15,7 @@ $scripts = [
     'migrate_delivery_damage_reports.php' => 'Delivery damage reports + reviews',
     'create_delivery_proofs_table.php' => 'Delivery proof photos (3NF)',
     'migrate_damage_goods_photo.php' => 'Damage goods photo column',
+    'migrate_delivery_transfers.php' => 'Delivery rider transfer audit log',
 ];
 
 echo "VIP Database Setup\n==================\n\n";

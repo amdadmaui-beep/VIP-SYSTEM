@@ -778,17 +778,28 @@ function sendLowStockAlertEmail(array $recipients, array $lowProducts): array
         $mail->Body = $body;
         $mail->AltBody = $altBody;
 
-        $sentCount = 0;
+        $bccRecipients = [];
         foreach ($recipients as $r) {
             $email = trim((string)($r['email'] ?? ''));
-            if ($email === '') continue;
+            if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                continue;
+            }
             $name = trim((string)($r['full_name'] ?? $r['user_name'] ?? 'Staff'));
+            $bccRecipients[] = ['email' => $email, 'name' => $name];
+        }
+
+        if ($bccRecipients === []) {
+            return ['ok' => false, 'message' => 'No valid recipients', 'sent_to' => 0];
+        }
+
+        // One send with BCC so recipient addresses are not exposed to each other.
+        $mail->addAddress((string)$mail->From, (string)$mail->FromName);
+        foreach ($bccRecipients as $recipient) {
             try {
-                $mail->addAddress($email, $name);
+                $mail->addBCC($recipient['email'], $recipient['name']);
                 $sentCount++;
             } catch (Exception $e) {
-                $errors[] = "Invalid address {$email}: " . $e->getMessage();
-                continue;
+                $errors[] = "Invalid address {$recipient['email']}: " . $e->getMessage();
             }
         }
 

@@ -1,5 +1,5 @@
     <?php if ($can_rider_history): ?>
-    <div id="tab-cancelled" class="tab-content staggered-group" style="display:none;">
+    <div id="tab-cancelled" class="tab-content staggered-group" style="display:<?= $activeTab === 'cancelled' ? 'block' : 'none' ?>">
         <div class="bg-white rounded-[24px] p-6 shadow-xl border border-slate-100 relative overflow-hidden animate-fade-in-up">
             <div class="text-center pb-6 border-b border-slate-100 mb-5">
                 <div class="text-5xl font-black text-rose-500 tracking-tight"><?= count($cancelled_deliveries) ?></div>

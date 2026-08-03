@@ -1,9 +1,9 @@
 <?php
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/logger.php';
-require_once '../includes/adjustment_reason_helper.php';
-require_once '../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/adjustment_reason_helper.php';
+require_once __DIR__ . '/../includes/csrf.php';
 
 // Accessible to Owner (1), Manager (2), and Cashier (3)
 requireRole([1, 2, 3]);

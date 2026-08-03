@@ -1,123 +1,171 @@
     <!-- Floating Action Button (FAB) -->
-    <button onclick="openProductionModal()" class="fab" id="fabBtn">
+    <button onclick="openBatchStockInModal()" class="fab" id="fabBtn">
         <i class="fas fa-plus"></i>
-        <span>Record Stock In</span>
+        <span>Stock In</span>
     </button>
 
-    <!-- Tailwind Modal -->
-    <div class="modal-overlay hidden fixed inset-0 z-50 flex items-end md:items-center justify-center" id="productionModal">
-        <div class="modal-box w-full max-w-lg bg-white rounded-t-3xl md:rounded-3xl shadow-2xl relative transform transition-transform translate-y-full" id="prodModalContent">
-            <!-- Header -->
+    <!-- Batch Stock In Modal (Tabular Style) -->
+    <div class="modal-overlay hidden fixed inset-0 z-50 flex items-end md:items-center justify-center" id="batchStockInModal">
+        <div class="modal-box w-full max-w-lg bg-white rounded-t-3xl md:rounded-3xl shadow-2xl relative transform transition-transform translate-y-full" id="batchStockInModalContent">
             <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-3xl">
-                <h3 class="font-black text-lg text-slate-800 flex items-center gap-2"><i class="fas fa-boxes-stacked text-indigo-500"></i> Record Stock In</h3>
-                <button onclick="closeProductionModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 "><i class="fas fa-times"></i></button>
+                <h3 class="font-black text-lg text-slate-800 flex items-center gap-2"><i class="fas fa-boxes-stacked text-indigo-500"></i> Batch Stock In</h3>
+                <button onclick="closeBatchStockInModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200"><i class="fas fa-times"></i></button>
             </div>
-            
-            <!-- Body -->
-            <div class="modal-body hide-scroll pb-10">
-                <form method="POST" action="inventory_staff.php" onsubmit="return validateStockInForm(this)">
+            <div class="modal-body hide-scroll pb-4 px-0">
+                <form method="POST" action="inventory_staff.php" onsubmit="return validateBatchStockInForm(this)">
                     <?php echo csrfTokenField(); ?>
-                    <input type="hidden" name="production_type" value="stockin">
-                    
-                    <div class="mb-5">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Select Product <span class="text-red-500">*</span></label>
-                        <div class="custom-product-picker relative" data-modal="production">
-                            <input type="text" class="picker-search w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none cursor-pointer" placeholder="-- Choose --" readonly autocomplete="off">
-                            <input type="hidden" name="product_id" value="" required>
-                            <div class="picker-dropdown hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
-                            </div>
-                            <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><i class="fas fa-chevron-down text-xs"></i></div>
-                        </div>
-                    </div>
+                    <input type="hidden" name="batch_stockin" value="1">
 
-                    <div class="mb-5 mt-6">
+                    <!-- Shared Date Field -->
+                    <div class="px-4 pb-4 border-b border-slate-100">
                         <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Stock In Date <span class="text-red-500">*</span></label>
-                        <input type="date" name="production_date" id="prodDate" required class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500">
+                        <input type="date" name="batch_stockin_date" id="batchStockInDate" required class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500" value="<?php echo date('Y-m-d'); ?>">
                     </div>
 
-                    <div class="mb-8">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Quantity / Packs <span class="text-red-500">*</span></label>
-                        <div class="relative">
-                            <i class="fas fa-hashtag absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                            <input type="number" name="number_of_bags" min="1" step="1" required placeholder="e.g. 50" class="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-xl font-black text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500">
-                        </div>
+                    <?php if (count($products) > 0): ?>
+                    <div class="overflow-x-auto max-h-[50vh] overflow-y-auto px-4 pt-4">
+                        <table class="w-full text-sm">
+                            <thead class="sticky top-0 bg-white z-10">
+                                <tr class="border-b-2 border-slate-200">
+                                    <th class="text-left px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Product</th>
+                                    <th class="text-right px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Current</th>
+                                    <th class="text-right px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Qty to Add</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <?php foreach ($products as $p):
+                                    $pid = (int)$p['Product_ID'];
+                                    $qty = (float)$p['current_quantity'];
+                                ?>
+                                <tr class="hover:bg-slate-50 transition-colors">
+                                    <td class="px-2 py-2.5">
+                                        <span class="text-sm font-semibold text-slate-800"><?php echo htmlspecialchars($p['product_name']); ?></span>
+                                        <?php if (!empty($p['unit_name']) && $p['unit_name'] !== '-'): ?>
+                                            <span class="text-[10px] font-medium text-slate-400 ml-1"><?php echo htmlspecialchars($p['unit_name']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-2 py-2.5 text-right">
+                                        <span class="text-sm font-bold text-indigo-600"><?php echo number_format($qty, 0); ?></span>
+                                    </td>
+                                    <td class="px-2 py-2.5 text-right">
+                                        <input type="number" name="stockin_qty[<?php echo $pid; ?>]" value="0" min="0" step="1"
+                                               class="w-20 text-right px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                               oninput="highlightBatchStockInRow(this)">
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
                     </div>
+                    <?php else: ?>
+                    <div class="text-center py-10 px-4">
+                        <i class="fas fa-box-open text-4xl text-slate-200 mb-3"></i>
+                        <p class="text-sm font-semibold text-slate-400">No products found.</p>
+                    </div>
+                    <?php endif; ?>
 
-                    <button type="submit" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2">
-                        <i class="fas fa-save"></i> Save Stock In
-                    </button>
+                    <div class="px-4 pt-4 border-t border-slate-100 mt-4">
+                        <button type="submit" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2">
+                            <i class="fas fa-save"></i> Save All Stock In
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
     </div>
 
-    <!-- Manual Adjustment Modal -->
+    <!-- Manual Adjustment Modal (Physical Count) -->
     <div class="modal-overlay hidden fixed inset-0 z-50 flex items-end md:items-center justify-center" id="manualAdjustmentModal">
         <div class="modal-box w-full max-w-lg bg-white rounded-t-3xl md:rounded-3xl shadow-2xl relative transform transition-transform translate-y-full" id="adjModalContent">
             <div class="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-3xl">
-                <h3 class="font-black text-lg text-slate-800 flex items-center gap-2"><i class="fas fa-edit text-indigo-500"></i> Manual Adjustment</h3>
+                <h3 class="font-black text-lg text-slate-800 flex items-center gap-2"><i class="fas fa-table text-indigo-500"></i> Manual Adjustment (Physical Count)</h3>
+                <button onclick="printAdjustmentTable()" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 mr-2" title="Print physical count sheet"><i class="fas fa-print text-sm"></i></button>
                 <button onclick="closeAdjustmentModal()" class="w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 "><i class="fas fa-times"></i></button>
             </div>
-            <div class="modal-body hide-scroll pb-10">
-                <form method="post" action="../api/manual_adjustment_backend.php" onsubmit="return validateStockInForm(this)">
+            <div class="modal-body hide-scroll pb-4 px-0">
+                <form method="post" action="../api/manual_adjustment_backend.php" onsubmit="return validateAdjustmentForm(this)">
                     <?php echo csrfTokenField(); ?>
                     <input type="hidden" name="save_adjustment" value="1">
                     <input type="hidden" name="redirect_url" value="../pages/inventory_staff.php">
-                    <input type="hidden" name="adjustment_value" id="modal_adj_val_hidden" value="">
-                    
-                    <div class="mb-5">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Product <span class="text-red-500">*</span></label>
-                        <div class="custom-product-picker relative" data-modal="adjustment">
-                            <input type="text" class="picker-search w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none cursor-pointer" placeholder="-- Choose --" readonly autocomplete="off">
-                            <input type="hidden" name="product_id" id="modal_product_id_adj" value="" required>
-                            <div class="picker-dropdown hidden absolute left-0 right-0 z-20 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl max-h-52 overflow-y-auto">
+
+                    <?php if (count($products) > 0): ?>
+                    <div class="print-only print-header px-4 pt-4 pb-2">
+                        <h2 class="text-2xl font-black text-slate-900">Physical Count Sheet</h2>
+                        <p class="text-sm text-slate-500 mt-1"><?php echo date('F j, Y'); ?></p>
+                    </div>
+                    <div class="overflow-x-auto max-h-[55vh] overflow-y-auto px-4">
+                        <table class="w-full text-sm adj-table">
+                            <thead class="sticky top-0 bg-slate-50 z-10">
+                                <tr class="border-b-2 border-slate-200">
+                                    <th class="text-left px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Product Name</th>
+                                    <th class="text-right px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Current Qty<br><span class="text-slate-400 font-normal normal-case">(System)</span></th>
+                                    <th class="text-right px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Actual Qty<br><span class="text-slate-400 font-normal normal-case">(Physical)</span></th>
+                                    <th class="text-center px-2 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">Reason</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <?php foreach ($products as $p):
+                                    $pid = (int)$p['Product_ID'];
+                                    $qty = (float)$p['current_quantity'];
+                                ?>
+                                <tr class="hover:bg-slate-50 transition-colors adj-row" data-product-id="<?php echo $pid; ?>" data-current-qty="<?php echo $qty; ?>">
+                                    <td class="px-2 py-2.5">
+                                        <span class="text-sm font-semibold text-slate-800"><?php echo htmlspecialchars($p['product_name']); ?></span>
+                                        <?php if (!empty($p['unit_name']) && $p['unit_name'] !== '-'): ?>
+                                            <span class="text-[10px] font-medium text-slate-400 ml-1"><?php echo htmlspecialchars($p['unit_name']); ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-2 py-2.5 text-right">
+                                        <span class="text-sm font-bold text-indigo-600"><?php echo number_format($qty, 0); ?></span>
+                                    </td>
+                                    <td class="px-2 py-2.5 text-right">
+                                        <input type="number" name="adjustments[<?php echo $pid; ?>]" value="<?php echo $qty; ?>" min="0" step="1"
+                                               class="adj-actual-input w-20 text-right px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                               oninput="markAdjusted(this)">
+                                        <input type="hidden" name="current_qty[<?php echo $pid; ?>]" value="<?php echo $qty; ?>">
+                                    </td>
+                                    <td class="px-2 py-2.5 text-center">
+                                        <select name="adjustment_reason[<?php echo $pid; ?>]" class="adj-reason-select w-full min-w-[100px] px-2 py-2 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 appearance-none" onchange="markAdjustedReason(this)">
+                                            <option value="">Select</option>
+                                            <?php foreach ($reasons as $reason_opt): ?>
+                                                <option value="<?php echo htmlspecialchars($reason_opt); ?>"><?php echo htmlspecialchars($reason_opt); ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="print-only print-footer px-4 pb-2 pt-6">
+                        <div class="flex justify-between items-end">
+                            <div>
+                                <span class="text-sm font-bold text-slate-700">Counted by:</span>
+                                <span class="text-sm font-bold text-slate-800 ml-2"><?php echo htmlspecialchars($display_name); ?></span>
                             </div>
-                            <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"><i class="fas fa-chevron-down text-xs"></i></div>
-                        </div>
-                    </div>
-
-                    <!-- Adjustment Input -->
-                    <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 mb-6 relative mt-6">
-                        <div class="mb-6">
-                            <label class="block text-xs font-bold text-indigo-700 uppercase tracking-wide mb-2">Adjustment (±) <span class="text-red-500">*</span></label>
-                            <input type="number" id="modal_adj_val_adj" step="1" placeholder="+10 or -5" oninput="updateAdjQtyPreview()" class="w-full px-4 py-3 bg-white border border-indigo-200 rounded-xl text-xl font-black text-indigo-700 outline-none focus:ring-2 focus:ring-indigo-500 text-center">
-                        </div>
-
-                        <div class="mb-6 rounded-2xl bg-white/80 border border-indigo-100 px-4 py-3 shadow-sm">
-                            <span class="block text-[11px] font-black uppercase tracking-[0.2em] text-indigo-500 mb-2">Current Qty</span>
-                            <span id="modal_current_qty_label_adj" class="inline-flex items-center rounded-full bg-indigo-600 px-4 py-2 text-lg font-black text-white shadow-sm">Select Product</span>
-                        </div>
-
-                        <div class="border-t border-indigo-200 pt-5">
-                            <div class="flex items-center justify-between rounded-2xl border border-indigo-100 bg-white px-4 py-3">
-                                <span class="text-sm font-black text-slate-600">New Qty</span>
-                                <span id="modal_result_qty_adj" class="inline-flex min-w-[4.5rem] items-center justify-center rounded-full bg-indigo-100 px-4 py-2 text-xl font-black text-indigo-700">0</span>
+                            <div>
+                                <span class="text-sm font-bold text-slate-700">Date:</span>
+                                <span class="text-sm font-bold text-slate-800 ml-2"><?php echo date('F j, Y'); ?></span>
                             </div>
                         </div>
                     </div>
-
-                    <div class="mb-4">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Reason <span class="text-red-500">*</span></label>
-                        <select name="reason" id="modal_reason_adj" required onchange="toggleAdjustmentRemarksStaff()" class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none appearance-none" <?php echo empty($reasons) ? 'disabled' : ''; ?>>
-                            <option value=""><?php echo empty($reasons) ? 'No reasons configured in database' : 'Select Reason'; ?></option>
-                            <?php foreach ($reasons as $reason): ?>
-                                <option value="<?php echo htmlspecialchars($reason); ?>"><?php echo htmlspecialchars($reason); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <div class="relative pointer-events-none -mt-9 mr-4 text-right text-slate-400"><i class="fas fa-chevron-down text-xs"></i></div>
+                    <?php else: ?>
+                    <div class="text-center py-10 px-4">
+                        <i class="fas fa-box-open text-4xl text-slate-200 mb-3"></i>
+                        <p class="text-sm font-semibold text-slate-400">No products found.</p>
                     </div>
+                    <?php endif; ?>
 
-                    <div class="mb-8">
-                        <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Remarks <span id="remarksRequiredBadgeAdj" class="text-red-500 hidden">*</span></label>
-                        <textarea name="remarks" id="modal_remarks_adj" rows="3" maxlength="500" placeholder="Add details for this adjustment..." class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
-                        <p id="remarksHelpTextAdj" class="mt-2 text-[11px] font-medium text-slate-400">
-                            Optional for standard reasons. Required when you choose "Other (with remarks)".
-                        </p>
+                    <div class="px-4 pt-4 border-t border-slate-100 mt-4 space-y-4">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Remarks <span class="text-slate-400 font-normal normal-case">(optional)</span></label>
+                            <textarea name="remarks" id="modal_remarks_adj" rows="2" maxlength="500" placeholder="Add notes for this adjustment..." class="w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500 resize-none"></textarea>
+                        </div>
+
+                        <button type="submit" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2" <?php echo empty($reasons) ? 'disabled' : ''; ?>>
+                            <i class="fas fa-save"></i> Save All Adjustments
+                        </button>
                     </div>
-
-                    <button type="submit" class="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 transition-all flex items-center justify-center gap-2" <?php echo empty($reasons) ? 'disabled' : ''; ?>>
-                        <i class="fas fa-save"></i> Save Adjustment
-                    </button>
                 </form>
             </div>
         </div>

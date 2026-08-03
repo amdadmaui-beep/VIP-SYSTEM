@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/product_form_categories.php';
 
 // Accessible to Owner (1) and Manager (2, 4)
@@ -36,6 +37,11 @@ $selected_category_id = (int)($old_input['category_id'] ?? 0);
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken(false)) {
+        $_SESSION['products_add_errors'] = ['Invalid or expired security token. Please refresh and try again.'];
+        header('Location: products_add.php');
+        exit;
+    }
     $product_name = trim($_POST['product_name']);
     $unit_id = intval($_POST['unit_id']);
     $category_id = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
@@ -385,6 +391,7 @@ input:checked + .slider:before { transform: translateX(22px); }
 </style>
 
             <form method="POST" class="product-form" enctype="multipart/form-data">
+                <?php echo csrfTokenField(); ?>
                 <div class="product-layout">
                     <!-- Main Column -->
                     <div class="main-column">

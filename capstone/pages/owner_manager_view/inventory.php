@@ -141,6 +141,7 @@ $query = "SELECT
     p.product_image,
     p.created_date,
     p.is_discontinued,
+    p.safety_stock,
     (SELECT quantity FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY updated_at DESC LIMIT 1) as current_quantity,
     (SELECT storage_limit FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY updated_at DESC LIMIT 1) as storage_limit,
     (SELECT updated_at FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY updated_at DESC LIMIT 1) as inventory_updated_at
@@ -441,6 +442,21 @@ $history_result = $conn->query($history_query)->fetchAll();
         .price-cell {
             font-size: 1.1rem;
         }
+        @media print {
+            @page { size: landscape; margin: 15mm; }
+            body * { visibility: hidden; }
+            .dashboard-wrapper, .dashboard-wrapper * { visibility: visible; }
+            .dashboard-wrapper { position: absolute; left: 0; top: 0; width: 100%; }
+            .sidebar, .mobile-sidebar-toggle, .inventory-controls, .inventory-stats,
+            .inventory-header, .staff-header-card, .nav-tabs-rider,
+            .action-buttons, .btn-add-product, .pagination,
+            #openProductionModalHeader, #openProductionHistoryModalHeader,
+            #openManagerAdjustmentModal, .alert { display: none !important; }
+            .main-content { margin-left: 0 !important; padding: 0 !important; max-width: 100% !important; }
+            .inventory-table-container { box-shadow: none !important; border: 1px solid #ddd !important; border-radius: 8px !important; }
+            .inventory-table th { background: #1e293b !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .inventory-table td, .inventory-table th { padding: 8px 12px !important; font-size: 11px !important; }
+        }
     </style>
 </head>
 <body>
@@ -628,6 +644,10 @@ $history_result = $conn->query($history_query)->fetchAll();
                         <i class="fas fa-history"></i>
                         Production History
                     </button>
+                    <button onclick="window.print()" type="button" class="btn-add-product" style="background: #0f172a;">
+                        <i class="fas fa-print"></i>
+                        Print
+                    </button>
                 </div>
             </div>
         </section>
@@ -640,11 +660,11 @@ $history_result = $conn->query($history_query)->fetchAll();
             <div class="stat-card" style="border-left: 4px solid #f59e0b; background: #fffbeb; cursor: pointer; grid-column: 1 / -1;" onclick="location.href='delivery_damage_queue.php'">
                 <div class="stat-content">
                     <div class="stat-info">
-                        <p style="color: #92400e; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Pending Delivery Damage</p>
-                        <h3 style="color: #92400e; margin: 0.25rem 0;"><?php echo $pending_ddr_count; ?> Reports Awaiting Review</h3>
+                        <p style="color: #92400e; font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Damage Reports</p>
+                        <h3 style="color: #92400e; margin: 0.25rem 0;"><?php echo $pending_ddr_count; ?> Rider Reports Pending</h3>
                         <div class="stat-change" style="color: #b45309; font-size: 0.875rem;">
                             <i class="fas fa-exclamation-triangle"></i>
-                            Action required to adjust inventory levels
+                            Review rider damage and view staff photo evidence
                         </div>
                     </div>
                     <div class="stat-icon" style="background: #fef3c7; color: #f59e0b;">
@@ -735,6 +755,7 @@ $history_result = $conn->query($history_query)->fetchAll();
                                 <th>On Hand</th>
                                 <th>Reserved</th>
                                 <th>Sellable</th>
+                                <th>Repl. Level</th>
                                 <th>Storage Limit</th>
                                 <th>Status</th>
                                 <th>Created Date</th>
@@ -818,6 +839,15 @@ $history_result = $conn->query($history_query)->fetchAll();
                                         ?>
                                         <span class="quantity-cell <?php echo $sellableClass; ?>">
                                             <?php echo number_format((float)$sellableQty, 0); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        $replenishmentLevel = (float)($row['safety_stock'] ?? 0);
+                                        if ($replenishmentLevel <= 0) $replenishmentLevel = 50;
+                                        ?>
+                                        <span class="quantity-cell quantity-medium">
+                                            <?php echo number_format((int)$replenishmentLevel, 0); ?>
                                         </span>
                                     </td>
                                     <td>

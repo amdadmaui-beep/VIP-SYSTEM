@@ -335,33 +335,75 @@ function removeDamagePhoto() {
 
 function switchToTab(id) {
     if ((id === 'dashboard' && !CAN_RIDER_DASHBOARD) || (id === 'queue' && !CAN_RIDER_QUEUE) || (id === 'history' && !CAN_RIDER_HISTORY) || (id === 'cancelled' && !CAN_RIDER_HISTORY) || (id === 'damage-reports' && !HAS_DELIVERY_DAMAGE_REPORTS)) {
-        Swal.fire('Access Restricted', 'You can�t access this module right now.', 'warning');
+        Swal.fire('Access Restricted', 'You cannot access this module right now.', 'warning');
         return;
     }
-    document.querySelectorAll('.nav-tab-rider').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
-    const tabBtn = document.querySelector('.nav-tab-rider[data-tab="' + id + '"]');
-    if (tabBtn) tabBtn.classList.add('active');
+    document.querySelectorAll('.rider-nav-tab, .rider-drawer-link').forEach(function (el) {
+        el.classList.remove('rider-nav-active', 'rider-drawer-active');
+    });
+    document.querySelectorAll('.tab-content').forEach(function (c) { c.style.display = 'none'; });
+
+    document.querySelectorAll('[data-rider-tab="' + id + '"]').forEach(function (el) {
+        if (el.classList.contains('rider-nav-tab')) el.classList.add('rider-nav-active');
+        if (el.classList.contains('rider-drawer-link')) el.classList.add('rider-drawer-active');
+    });
+
     const panel = document.getElementById('tab-' + id);
     if (panel) panel.style.display = 'block';
-    if (window.location.hash !== `#${id}`) {
-        window.history.replaceState(null, '', `#${id}`);
+
+    const tabLabels = {
+        dashboard: 'Dashboard',
+        queue: 'Delivery Queue',
+        history: 'Delivered History',
+        cancelled: 'Cancelled Orders',
+        'damage-reports': 'Damage Reports'
+    };
+    const mobileLabel = document.getElementById('riderMobileTabLabel');
+    if (mobileLabel) {
+        mobileLabel.innerHTML = '<i class="fas fa-circle text-[6px] text-indigo-500" aria-hidden="true"></i> ' + (tabLabels[id] || 'Dashboard');
     }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('tab') !== id) {
+        params.set('tab', id);
+        const nextUrl = window.location.pathname + '?' + params.toString();
+        window.history.replaceState({ riderTab: id }, '', nextUrl);
+    }
+
     if (id === 'history') loadDeliveredHistory();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function getInitialTab() {
+    const params = new URLSearchParams(window.location.search);
+    const queryTab = params.get('tab') || '';
     const hashTab = (window.location.hash || '').replace('#', '');
-    if (hashTab === 'dashboard' && CAN_RIDER_DASHBOARD) return 'dashboard';
-    if (hashTab === 'queue' && CAN_RIDER_QUEUE) return 'queue';
-    if (hashTab === 'history' && CAN_RIDER_HISTORY) return 'history';
-    if (hashTab === 'cancelled' && CAN_RIDER_HISTORY) return 'cancelled';
-    if (hashTab === 'damage-reports' && HAS_DELIVERY_DAMAGE_REPORTS) return 'damage-reports';
+    const candidate = queryTab || hashTab;
+
+    if (candidate === 'dashboard' && CAN_RIDER_DASHBOARD) return 'dashboard';
+    if (candidate === 'queue' && CAN_RIDER_QUEUE) return 'queue';
+    if (candidate === 'history' && CAN_RIDER_HISTORY) return 'history';
+    if (candidate === 'cancelled' && CAN_RIDER_HISTORY) return 'cancelled';
+    if (candidate === 'damage-reports' && HAS_DELIVERY_DAMAGE_REPORTS) return 'damage-reports';
     if (CAN_RIDER_DASHBOARD) return 'dashboard';
     if (CAN_RIDER_QUEUE) return 'queue';
     if (CAN_RIDER_HISTORY) return 'history';
     if (HAS_DELIVERY_DAMAGE_REPORTS) return 'damage-reports';
     return null;
+}
+
+function initRiderTabNavigation() {
+    document.querySelectorAll('[data-rider-tab]').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+            const tabId = link.getAttribute('data-rider-tab');
+            if (!tabId) return;
+            e.preventDefault();
+            switchToTab(tabId);
+        });
+    });
+
+    const initialTab = getInitialTab();
+    if (initialTab) switchToTab(initialTab);
 }
 
 function formatDistanceKm(km) {
@@ -1068,10 +1110,7 @@ document.querySelectorAll('.nav-tab-rider').forEach(tab => {
     });
 });
 
-window.addEventListener('hashchange', () => {
-    const tab = getInitialTab();
-    if (tab) switchToTab(tab);
-});
+// Tab visibility handled by initRiderTabNavigation() on DOMContentLoaded
 
 function deriveItemReceivedQty(item) {
     const ordered = parseFloat(item.ordered_qty) || 0;
@@ -1849,9 +1888,7 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('../sw.js').catch(() => {});
     });
 }
-const initialTab = getInitialTab();
-if (initialTab) switchToTab(initialTab);
-initSlideToComplete();
+    initSlideToComplete();
 if (RIDER_MAPS_ENABLED) {
     refreshMapStyleButton();
 }
@@ -2312,18 +2349,37 @@ function promptCancelDelivery(deliveryId) {
                     border-radius: 10px !important; font-family: 'Poppins', sans-serif !important;
                     font-size: 0.8rem !important; margin: 0.5rem 0 0 !important;
                 }
+                .cdr-vehicle-callout {
+                    display: none;
+                    margin-bottom: 1.1rem;
+                    padding: 0.85rem 1rem;
+                    border-radius: 12px;
+                    background: #fffbeb;
+                    border: 1px solid #fde68a;
+                    font-size: 0.8rem;
+                    color: #92400e;
+                    line-height: 1.45;
+                    text-align: left;
+                }
+                .cdr-vehicle-callout.is-visible { display: block; }
+                .cdr-vehicle-callout strong { color: #b45309; }
             </style>
 
             <div class="cdr-wrap">
-                <div class="cdr-header">
-                    <div class="cdr-header-icon">
+                <div class="cdr-header" id="cdrHeaderBlock">
+                    <div class="cdr-header-icon" id="cdrHeaderIcon">
                         <i class="fas fa-truck-arrow-right"></i>
                     </div>
-                    <p class="cdr-header-title">Mark as Returning</p>
-                    <p class="cdr-header-sub">Select a reason to return this delivery</p>
+                    <p class="cdr-header-title" id="cdrHeaderTitle">Mark as Returning</p>
+                    <p class="cdr-header-sub" id="cdrHeaderSub">Select a reason to return this delivery</p>
                 </div>
 
                 <input type="hidden" id="cancelDeliveryReason" value="">
+
+                <div id="cdrVehicleIssueCallout" class="cdr-vehicle-callout">
+                    <strong><i class="fas fa-triangle-exclamation"></i> One report covers all active deliveries.</strong>
+                    This will flag your other active deliveries (Scheduled / In Transit) as Vehicle issue. You only need to report once. Delivered or remitted orders are not affected.
+                </div>
 
                 <div style="margin-bottom:1.1rem;">
                     <label class="cdr-label">Cancellation Reason <span style="color:#ef4444">*</span></label>
@@ -2339,7 +2395,7 @@ function promptCancelDelivery(deliveryId) {
                 <div>
                     <label class="cdr-label">
                         Remarks
-                        <span style="text-transform:none;letter-spacing:0;font-weight:500;color:#94a3b8;font-size:0.68rem;"> — required for "Other"</span>
+                        <span id="cdrRemarksHint" style="text-transform:none;letter-spacing:0;font-weight:500;color:#94a3b8;font-size:0.68rem;"> — required for "Other"</span>
                     </label>
                     <textarea id="cancelDeliveryRemarks" class="cdr-textarea" placeholder="Add extra details if needed..."></textarea>
                 </div>
@@ -2352,6 +2408,9 @@ function promptCancelDelivery(deliveryId) {
         customClass: {
             popup: 'cdr-popup',
         },
+        didOpen: () => {
+            updateCancelReasonUi('');
+        },
         preConfirm: () => {
             const reason = document.getElementById('cancelDeliveryReason')?.value?.trim() || '';
             const remarks = document.getElementById('cancelDeliveryRemarks')?.value?.trim() || '';
@@ -2361,6 +2420,10 @@ function promptCancelDelivery(deliveryId) {
             }
             if (reason === 'Other' && !remarks) {
                 Swal.showValidationMessage('⚠️ Remarks are required when "Other" is selected.');
+                return false;
+            }
+            if (reason === 'Vehicle issue' && !remarks) {
+                Swal.showValidationMessage('⚠️ Please describe the vehicle issue before reporting.');
                 return false;
             }
 
@@ -2381,7 +2444,12 @@ function promptCancelDelivery(deliveryId) {
                 .then(r => r.json())
                 .then(data => {
                     if (data.success) {
-                        Swal.fire('Returning', data.message, 'success').then(() => refreshQueueAjax(false));
+                        const isVehicle = res.value.reason === 'Vehicle issue';
+                        Swal.fire(
+                            isVehicle ? 'Vehicle Issue Reported' : 'Returning',
+                            data.message,
+                            isVehicle ? 'warning' : 'success'
+                        ).then(() => refreshQueueAjax(false));
                     } else {
                         Swal.fire('Error', riderApiErrorMessage(data, 'Failed to cancel'), 'error');
                     }
@@ -2414,10 +2482,116 @@ function selectCancelReason(el) {
     if (dropdown)     dropdown.classList.remove('open');
     if (chevron)      chevron.classList.remove('open');
 
+    updateCancelReasonUi(value);
+
     // Highlight selected row
     document.querySelectorAll('.cdr-option').forEach(opt => {
         opt.style.background = opt === el ? '#f0f0ff' : 'white';
         opt.style.borderLeft = opt === el ? '3px solid #6366f1' : '3px solid transparent';
+    });
+}
+
+function updateCancelReasonUi(reason) {
+    const isVehicle = reason === 'Vehicle issue';
+    const callout = document.getElementById('cdrVehicleIssueCallout');
+    const headerTitle = document.getElementById('cdrHeaderTitle');
+    const headerSub = document.getElementById('cdrHeaderSub');
+    const headerIcon = document.getElementById('cdrHeaderIcon');
+    const remarksHint = document.getElementById('cdrRemarksHint');
+    const remarksField = document.getElementById('cancelDeliveryRemarks');
+    const confirmBtn = Swal.getConfirmButton();
+
+    if (callout) {
+        callout.classList.toggle('is-visible', isVehicle);
+    }
+    if (remarksHint) {
+        remarksHint.innerHTML = isVehicle
+            ? ' <span style="color:#ef4444;">*</span> — required for vehicle issue'
+            : ' — required for "Other"';
+    }
+    if (remarksField) {
+        remarksField.placeholder = isVehicle
+            ? 'Describe the issue (e.g. flat tire, engine trouble)...'
+            : 'Add extra details if needed...';
+    }
+    if (headerTitle) {
+        headerTitle.textContent = isVehicle ? 'Report Vehicle Issue' : 'Mark as Returning';
+    }
+    if (headerSub) {
+        headerSub.textContent = isVehicle
+            ? 'Report once — all active deliveries will be flagged for manager transfer'
+            : 'Select a reason to return this delivery';
+    }
+    if (headerIcon) {
+        headerIcon.innerHTML = isVehicle
+            ? '<i class="fas fa-triangle-exclamation"></i>'
+            : '<i class="fas fa-truck-arrow-right"></i>';
+    }
+    if (confirmBtn) {
+        confirmBtn.innerHTML = isVehicle
+            ? '<i class="fas fa-triangle-exclamation" style="margin-right:6px;"></i> Report Vehicle Issue'
+            : '<i class="fas fa-paper-plane" style="margin-right:6px;"></i> Submit';
+    }
+}
+
+function promptReportVehicleIssue() {
+    Swal.fire({
+        title: 'Report Vehicle Issue?',
+        html: `
+            <p style="text-align:left; font-size:0.9rem; color:#475569; margin:0 0 1rem;">
+                This will flag <strong>all</strong> your active deliveries (Scheduled / In Transit) for manager transfer.
+                Delivered and remitted orders stay with you for cashier remittance.
+            </p>
+            <p style="text-align:left; font-size:0.85rem; color:#92400e; background:#fffbeb; border:1px solid #fde68a; border-radius:10px; padding:0.75rem 1rem; margin:0 0 1rem;">
+                <i class="fas fa-user-clock"></i> You will be set to <strong>Off Duty</strong> until your vehicle is ready.
+            </p>
+            <label style="display:block; text-align:left; font-size:0.72rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:0.35rem;">Describe the issue <span style="color:#dc2626;">*</span></label>
+            <textarea id="vehicleIssueRemarks" class="swal2-textarea" placeholder="e.g. flat tire on national highway, waiting for tow..." style="width:100%; min-height:72px; margin:0;" required></textarea>
+        `,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Report Vehicle Issue',
+        confirmButtonColor: '#d97706',
+        cancelButtonText: 'Cancel',
+        focusConfirm: false,
+        preConfirm: () => {
+            const el = document.getElementById('vehicleIssueRemarks');
+            const remarks = el ? String(el.value || '').trim() : '';
+            if (!remarks) {
+                Swal.showValidationMessage('Please describe the vehicle issue before reporting.');
+                return false;
+            }
+            if (remarks.length > 500) {
+                Swal.showValidationMessage('Details must be 500 characters or less.');
+                return false;
+            }
+            return { remarks };
+        }
+    }).then((res) => {
+        if (!res.isConfirmed) return;
+
+        const formData = new FormData();
+        const csrf = getRiderCsrfToken();
+        if (csrf) formData.append('csrf_token', csrf);
+        formData.append('action', 'report_vehicle_issue');
+        formData.append('remarks', res.value.remarks);
+
+        Swal.fire({ title: 'Reporting...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        fetch('../api/rider_dashboard_backend.php', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    Swal.fire({
+                        title: 'Vehicle Issue Reported',
+                        text: data.message || 'Manager has been notified.',
+                        icon: 'warning',
+                        confirmButtonColor: '#d97706'
+                    }).then(() => window.location.reload());
+                } else {
+                    Swal.fire('Unable to Report', data.message || 'Please try again.', 'error');
+                }
+            })
+            .catch(() => Swal.fire('Error', 'Network error', 'error'));
     });
 }
 
@@ -2610,7 +2784,49 @@ function backToDuty() {
     });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+// ── Mobile drawer ──
+function initRiderDrawer() {
+    var toggle = document.getElementById('riderDrawerToggle');
+    var backdrop = document.getElementById('riderDrawerBackdrop');
+    var panel = document.getElementById('riderDrawerPanel');
+    var closeBtn = document.getElementById('riderDrawerClose');
+    if (!toggle || !backdrop || !panel) return;
+
+    function openDrawer() {
+        backdrop.classList.add('inv-drawer-visible');
+        panel.classList.remove('is-closed');
+        panel.classList.add('is-open');
+        document.body.classList.add('rider-drawer-locked');
+        toggle.setAttribute('aria-expanded', 'true');
+    }
+    function closeDrawer() {
+        backdrop.classList.remove('inv-drawer-visible');
+        panel.classList.remove('is-open');
+        panel.classList.add('is-closed');
+        document.body.classList.remove('rider-drawer-locked');
+        toggle.setAttribute('aria-expanded', 'false');
+    }
+    toggle.addEventListener('click', function () {
+        var open = backdrop.classList.contains('inv-drawer-visible');
+        if (open) { closeDrawer(); } else { openDrawer(); }
+    });
+    if (closeBtn) closeBtn.addEventListener('click', closeDrawer);
+    backdrop.addEventListener('click', closeDrawer);
+    document.querySelectorAll('[data-rider-drawer-link]').forEach(function (a) {
+        a.addEventListener('click', closeDrawer);
+    });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && backdrop.classList.contains('inv-drawer-visible')) closeDrawer();
+    });
+    // Close drawer when window resizes past md breakpoint
+    var mql = window.matchMedia('(min-width: 768px)');
+    function handleMq(e) { if (e.matches) closeDrawer(); }
+    if (mql.addEventListener) mql.addEventListener('change', handleMq);
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    initRiderDrawer();
+    initRiderTabNavigation();
     initRealtimeRiderSocket();
     pollRiderRealtimeUpdates();
     setInterval(pollRiderRealtimeUpdates, 10000);

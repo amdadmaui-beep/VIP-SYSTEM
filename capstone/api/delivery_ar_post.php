@@ -386,6 +386,21 @@ try {
                 );
                 $ar_notice_sent = $arMailResult['ok'] ?? false;
             }
+
+            if ($ar_id > 0 && $cash_received > 0 && function_exists('sendARPaymentEmail')) {
+                $payMailResult = sendARPaymentEmail(
+                    $customer_email,
+                    $customer_name,
+                    $ar_id,
+                    $cash_received,
+                    max(0, $ar_balance),
+                    $ar_balance <= 0,
+                    $total_amount_to_collect
+                );
+                if (!$ar_notice_sent) {
+                    $ar_notice_sent = $payMailResult['ok'] ?? false;
+                }
+            }
         } catch (Throwable $e) {
             error_log("Failed to send AR receipt email: " . $e->getMessage());
         }

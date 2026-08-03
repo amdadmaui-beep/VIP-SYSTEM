@@ -15,11 +15,15 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
 
 header('Content-Type: text/html; charset=utf-8');
+
+$dashboardRoleIds = getDashboardRoleIds($conn);
+requireRole(empty($dashboardRoleIds) ? [1] : $dashboardRoleIds);
 
 // Basic diagnostics first
 $counts = [

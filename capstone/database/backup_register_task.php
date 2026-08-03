@@ -29,12 +29,12 @@ $output = shell_exec($cmd);
 echo $output . "\n";
 
 if ($output !== null && (strpos($output, 'SUCCESS') !== false || strpos($output, 'success') !== false)) {
-    echo "✅ Task '$taskName' registered successfully.\n";
+    echo "Task '$taskName' registered successfully.\n";
     echo "   Backup script: $scriptPath\n";
     echo "   PHP: $phpPath\n";
     echo "   Schedule: Every hour, starting at midnight\n";
 } else {
-    echo "❌ Failed to register task. Try running as Administrator.\n";
+    echo "Failed to register task. Try running as Administrator.\n";
     echo "   Command attempted:\n";
     echo "   $cmd\n";
     exit(1);

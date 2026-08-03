@@ -172,6 +172,20 @@ function enforceSessionIdleTimeout(): void {
         authDeny('Session expired due to inactivity. Please log in again.', 401);
     }
     $_SESSION['last_activity'] = $now;
+
+    // Rotate the session JWT on activity so it never expires while the session stays alive
+    if (isset($_SESSION['jwt']) && isset($_SESSION['user_role']) && function_exists('jwtIssue')) {
+        try {
+            $_SESSION['jwt'] = jwtIssue([
+                'sub' => (int) $_SESSION['user_id'],
+                'username' => (string) ($_SESSION['user_name'] ?? ''),
+                'name' => (string) ($_SESSION['full_name'] ?? ''),
+                'role' => $_SESSION['user_role'],
+            ]);
+        } catch (Throwable $e) {
+            error_log('JWT rotation failed: ' . $e->getMessage());
+        }
+    }
 }
 
 hydrateSessionFromJwtIfPresent();

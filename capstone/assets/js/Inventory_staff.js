@@ -1,4 +1,5 @@
 const ADJUSTMENT_OTHER_REASON = (window.INVENTORY_STAFF_CONFIG && window.INVENTORY_STAFF_CONFIG.adjustmentOtherReasonLabel) || '';
+const DAMAGE_TYPE_REASONS = (window.INVENTORY_STAFF_CONFIG && window.INVENTORY_STAFF_CONFIG.damageTypeReasons) || [];
 
 // Storage Limit Modal State
 let storageLimitState = {
@@ -257,35 +258,78 @@ let storageLimitState = {
         }
 
         // Modal triggers with animation
-        const prodModal = setupModal('productionModal', 'prodModalContent');
+        const batchStockInModal = setupModal('batchStockInModal', 'batchStockInModalContent');
         const adjModal = setupModal('manualAdjustmentModal', 'adjModalContent');
-        prodModal.init(); adjModal.init();
+        batchStockInModal.init(); adjModal.init();
 
-        function openProductionModal() {
-            var prodPicker = document.querySelector('.custom-product-picker[data-modal="production"]');
-            if (prodPicker) {
-                var ph = prodPicker.querySelector('.picker-search');
-                var phHidden = prodPicker.querySelector('input[type="hidden"]');
-                if (ph) ph.value = '';
-                if (phHidden) phHidden.value = '';
-            }
-            prodModal.open();
-            const d = document.getElementById('prodDate');
+        function openBatchStockInModal() {
+            batchStockInModal.open();
+            const d = document.getElementById('batchStockInDate');
             if (d && !d.value) {
                 const now = new Date();
                 d.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
             }
         }
-        function closeProductionModal() { prodModal.close(); }
+        function closeBatchStockInModal() { batchStockInModal.close(); }
+
+        function highlightBatchStockInRow(input) {
+            const row = input.closest('tr');
+            if (!row) return;
+            const val = parseInt(input.value) || 0;
+            if (val > 0) {
+                row.classList.add('bg-indigo-50');
+                row.classList.remove('hover:bg-slate-50');
+            } else {
+                row.classList.remove('bg-indigo-50');
+                row.classList.add('hover:bg-slate-50');
+            }
+        }
+
+        function validateBatchStockInForm(form) {
+            const dateInput = form.querySelector('input[name="batch_stockin_date"]');
+            if (!dateInput || !dateInput.value) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Date Required',
+                    text: 'Please select a stock in date.',
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            const inputs = form.querySelectorAll('input[name^="stockin_qty"]');
+            let hasAny = false;
+            for (const input of inputs) {
+                if (parseInt(input.value) > 0) {
+                    hasAny = true;
+                    break;
+                }
+            }
+
+            if (!hasAny) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'No Quantities Entered',
+                    text: 'Please enter at least one product with a quantity greater than 0.',
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            return true;
+        }
 
         function openAdjustmentModal() {
-            document.getElementById('modal_adj_val_adj').value = '';
-            document.getElementById('modal_adj_val_hidden').value = '';
             adjModal.open();
             toggleAdjustmentRemarksStaff();
-            updateAdjQtyPreview();
         }
         function closeAdjustmentModal() { adjModal.close(); }
+
+        function printAdjustmentTable() {
+            window.print();
+        }
 
         // Storage Limit Modal Functions
         let storageLimitModal;
@@ -417,43 +461,83 @@ let storageLimitState = {
             }
         }
 
-        function toggleAdjustmentRemarksStaff() {
-            const reasonSelect = document.getElementById('modal_reason_adj');
-            const remarksField = document.getElementById('modal_remarks_adj');
-            const requiredBadge = document.getElementById('remarksRequiredBadgeAdj');
-            const helpText = document.getElementById('remarksHelpTextAdj');
-            if (!reasonSelect || !remarksField || !requiredBadge || !helpText) return;
+        function validateAdjustmentForm(form) {
+            const inputs = form.querySelectorAll('.adj-actual-input');
+            let hasChanges = false;
+            const missingReasons = [];
 
-            const isOther = ADJUSTMENT_OTHER_REASON !== '' && reasonSelect.value === ADJUSTMENT_OTHER_REASON;
-            remarksField.required = isOther;
-            requiredBadge.classList.toggle('hidden', !isOther);
-            helpText.textContent = isOther
-                ? 'Remarks are required for "Other (with remarks)".'
-                : 'Optional for standard reasons. Required when you choose "Other (with remarks)".';
+            for (const input of inputs) {
+                const row = input.closest('.adj-row');
+                if (!row) continue;
+                const currentQty = parseFloat(row.dataset.currentQty) || 0;
+                const actualQty = parseFloat(input.value) || 0;
+
+                if (actualQty !== currentQty) {
+                    hasChanges = true;
+                    const reasonSelect = row.querySelector('.adj-reason-select');
+                    const productName = row.querySelector('.text-sm.font-semibold')?.textContent?.trim() || 'Unknown';
+                    if (!reasonSelect || !reasonSelect.value) {
+                        missingReasons.push(productName);
+                    }
+                }
+            }
+
+            if (!hasChanges) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'No Changes',
+                    text: 'The actual quantities match the system quantities. No adjustments needed.',
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            if (missingReasons.length > 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Reason Required',
+                    html: `<p class="text-sm font-medium text-slate-600 mb-3">Please select a reason for the following product(s):</p>
+                           <div class="text-left text-sm font-semibold text-slate-800 space-y-1">${missingReasons.map(r => `<div class="flex items-center gap-2"><i class="fas fa-exclamation-circle text-amber-500 text-xs"></i> ${r}</div>`).join('')}</div>`,
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            return true;
         }
 
-        function updateAdjQtyPreview() {
-            const picker = document.querySelector('.custom-product-picker[data-modal="adjustment"]');
-            const hiddenInput = picker ? picker.querySelector('input[type="hidden"]') : null;
-            const displayLabel = document.getElementById('modal_current_qty_label_adj');
-            const displayResult = document.getElementById('modal_result_qty_adj');
-            const inputAdj = document.getElementById('modal_adj_val_adj');
-            const hiddenAdjVal = document.getElementById('modal_adj_val_hidden');
-
-            const productId = hiddenInput ? hiddenInput.value : '';
-            const current = productId ? (parseFloat(hiddenInput.getAttribute('data-qty')) || 0) : 0;
-            const adjust = parseFloat(inputAdj ? inputAdj.value : '') || 0;
-            
-            if (productId) {
-                displayLabel.textContent = current.toLocaleString() + ' units';
+        function markAdjusted(input) {
+            const row = input.closest('.adj-row');
+            if (!row) return;
+            const currentQty = parseFloat(row.dataset.currentQty) || 0;
+            const actualQty = parseFloat(input.value) || 0;
+            const reasonSelect = row.querySelector('.adj-reason-select');
+            if (actualQty !== currentQty) {
+                row.classList.add('bg-amber-50', 'border-l-4', 'border-l-amber-400');
+                row.classList.remove('hover:bg-slate-50');
+                if (reasonSelect) reasonSelect.required = true;
             } else {
-                displayLabel.textContent = 'Select Product';
+                row.classList.remove('bg-amber-50', 'border-l-4', 'border-l-amber-400');
+                row.classList.add('hover:bg-slate-50');
+                if (reasonSelect) reasonSelect.required = false;
             }
-            
-            displayResult.textContent = (current + adjust).toLocaleString();
-            displayResult.className = 'text-lg font-black ' + (current + adjust < 0 ? 'text-red-500' : 'text-indigo-600');
+        }
 
-            if (hiddenAdjVal) hiddenAdjVal.value = adjust;
+        function markAdjustedReason(select) {
+            const row = select.closest('.adj-row');
+            if (!row) return;
+            const currentQty = parseFloat(row.dataset.currentQty) || 0;
+            const actualInput = row.querySelector('.adj-actual-input');
+            const actualQty = actualInput ? parseFloat(actualInput.value) || 0 : 0;
+            if (actualQty !== currentQty && select.value !== '') {
+                row.classList.add('bg-amber-50', 'border-l-4', 'border-l-amber-400');
+                row.classList.remove('hover:bg-slate-50');
+            } else if (actualQty === currentQty) {
+                row.classList.remove('bg-amber-50', 'border-l-4', 'border-l-amber-400');
+                row.classList.add('hover:bg-slate-50');
+            }
         }
 
         function escapeAdjHtml(value) {
@@ -575,9 +659,7 @@ let storageLimitState = {
                     dropdown.classList.add('hidden');
                     searchInput.setAttribute('readonly', '');
 
-                    if (modalType === 'adjustment') {
-                        updateAdjQtyPreview();
-                    }
+
                 });
             });
         }
@@ -628,6 +710,46 @@ let storageLimitState = {
             return d.innerHTML;
         }
 
+        function validateAdjustmentForm(form) {
+            const reasonSelect = form.querySelector('select[name="reason"]');
+            if (reasonSelect && !reasonSelect.value) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Reason Required',
+                    text: 'Please select a reason for the adjustment.',
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            const inputs = form.querySelectorAll('.adj-actual-input');
+            let hasChanges = false;
+            for (const input of inputs) {
+                const row = input.closest('.adj-row');
+                if (!row) continue;
+                const currentQty = parseFloat(row.dataset.currentQty) || 0;
+                const actualQty = parseFloat(input.value) || 0;
+                if (actualQty !== currentQty) {
+                    hasChanges = true;
+                    break;
+                }
+            }
+
+            if (!hasChanges) {
+                Swal.fire({
+                    icon: 'info',
+                    title: 'No Changes',
+                    text: 'The actual quantities match the system quantities. No adjustments needed.',
+                    confirmButtonColor: '#6366f1',
+                    customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                });
+                return false;
+            }
+
+            return true;
+        }
+
         function validateStockInForm(form) {
             var hidden = form.querySelector('input[name="product_id"]');
             if (!hidden || !hidden.value) {
@@ -639,6 +761,21 @@ let storageLimitState = {
                     customClass: { popup: 'rounded-[28px] shadow-2xl' }
                 });
                 return false;
+            }
+
+            var reasonSelect = form.querySelector('select[name="reason"]');
+            var photoInput = form.querySelector('input[name="damage_photo"]');
+            if (reasonSelect && photoInput && DAMAGE_TYPE_REASONS.includes(reasonSelect.value)) {
+                if (!photoInput.files || photoInput.files.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Photo Required',
+                        text: 'A damage photo is required for the selected reason.',
+                        confirmButtonColor: '#6366f1',
+                        customClass: { popup: 'rounded-[28px] shadow-2xl' }
+                    });
+                    return false;
+                }
             }
             return true;
         }

@@ -1,6 +1,17 @@
     <?php if ($can_rider_queue): ?>
-    <div id="tab-queue" class="tab-content staggered-group" style="display:none;">
+    <div id="tab-queue" class="tab-content staggered-group" style="display:<?= $activeTab === 'queue' ? 'block' : 'none' ?>">
         <div class="section-heading animate-fade-in-up">Active deliveries</div>
+        <?php if ($count_pending > 0): ?>
+        <div class="vehicle-issue-report-card mb-3">
+            <div class="vehicle-issue-report-copy">
+                <strong><i class="fas fa-truck-monster"></i> Vehicle breakdown?</strong>
+                <p>Report once to flag all active deliveries (Scheduled / In Transit). Delivered and remitted orders stay with you for cashier remittance. You will be set to <strong>Off Duty</strong>.</p>
+            </div>
+            <button type="button" class="btn-vehicle-issue" onclick="promptReportVehicleIssue()">
+                <i class="fas fa-exclamation-triangle"></i> Report Vehicle Issue
+            </button>
+        </div>
+        <?php endif; ?>
         <?php if (!empty($deliveries)): ?>
             <div id="queueList" class="staggered-group" style="max-height: 600px; overflow-y: auto; padding-right: 0.5rem;">
                 <style>

@@ -1,10 +1,10 @@
 <?php
 session_start();
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/logger.php';
-require_once '../includes/roles_helper.php';
-require_once '../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/csrf.php';
 
 // Allow Owner (1), Manager (2), Admin (4), and Inventory Staff roles
 $staff_ids = getInventoryStaffRoleIds($conn);

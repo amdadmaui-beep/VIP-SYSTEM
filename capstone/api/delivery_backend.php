@@ -7,15 +7,16 @@
  * Location: capstone/api/delivery_backend.php
  */
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/roles_helper.php';
-require_once '../includes/order_status_helper.php';
-require_once '../includes/delivery_cancellation_helper.php';
-require_once '../includes/rider_availability_helper.php';
-require_once '../includes/logger.php';
-require_once '../includes/csrf.php'; // CSRF Protection - Security Fix
-require_once '../includes/preparation_tasks_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/order_status_helper.php';
+require_once __DIR__ . '/../includes/delivery_cancellation_helper.php';
+require_once __DIR__ . '/../includes/rider_availability_helper.php';
+require_once __DIR__ . '/../includes/delivery_transfer_helper.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/csrf.php'; // CSRF Protection - Security Fix
+require_once __DIR__ . '/../includes/preparation_tasks_helper.php';
 require_once __DIR__ . '/../realtime/publish_event.php';
 
 $rider_ids = getRiderRoleIds($conn);
@@ -70,10 +71,7 @@ function handleBulkTransfer(PDO $conn, int $user_id): void
         exit;
     }
 
-    // Verify source rider has at least one Returning+Vehicle issue delivery
-    $vi_check = $conn->prepare("SELECT 1 FROM delivery WHERE assigned_rider_id = ? AND delivery_status = 'Returning' AND cancellation_reason = 'Vehicle issue' LIMIT 1");
-    $vi_check->execute([$source_rider_id]);
-    if (!$vi_check->fetchColumn()) {
+    if (!deliveryRiderHasVehicleIssueDeliveries($conn, $source_rider_id)) {
         header("Location: {$redirect_to}?error=" . urlencode('The selected rider does not have any Vehicle issue deliveries to transfer.'));
         exit;
     }
@@ -91,17 +89,47 @@ function handleBulkTransfer(PDO $conn, int $user_id): void
         exit;
     }
 
-    // Find all active deliveries for the source rider
-    $stmt = $conn->prepare("SELECT Delivery_ID, Order_ID, delivery_status, cancellation_reason 
-                            FROM delivery 
-                            WHERE assigned_rider_id = ? 
-                              AND delivery_status NOT IN ('Completed', 'Cancelled', 'Delivered')
-                            ORDER BY Delivery_ID");
-    $stmt->execute([$source_rider_id]);
-    $deliveries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Find deliveries to transfer (selected IDs or all eligible for source rider)
+    $requested_ids = $_POST['delivery_ids'] ?? [];
+    if (!is_array($requested_ids)) {
+        $requested_ids = [$requested_ids];
+    }
+    $requested_ids = array_values(array_unique(array_filter(array_map('intval', $requested_ids), static fn($id) => $id > 0)));
+
+    $ownershipParams = [];
+    $ownership = riderBuildOwnershipCondition($conn, 'd', $source_rider_id, $ownershipParams);
+    if ($ownership === '0 = 1') {
+        header("Location: {$redirect_to}?error=" . urlencode('Cannot resolve deliveries for this rider.'));
+        exit;
+    }
+
+    $excluded_ph = deliveryTransferExcludedSqlPlaceholders();
+    $excluded_params = deliveryTransferExcludedSqlParams();
+    $sql = "SELECT d.Delivery_ID, d.Order_ID, d.delivery_status, d.cancellation_reason
+            FROM delivery d
+            WHERE {$ownership}
+              AND d.delivery_status NOT IN ({$excluded_ph})";
+    $params = array_merge($ownershipParams, $excluded_params);
+
+    if (!empty($requested_ids)) {
+        $id_ph = implode(',', array_fill(0, count($requested_ids), '?'));
+        $sql .= " AND Delivery_ID IN ({$id_ph})";
+        $params = array_merge($params, $requested_ids);
+    }
+
+    $sql .= ' ORDER BY Delivery_ID';
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($params);
+    $deliveries = array_values(array_filter(
+        $stmt->fetchAll(PDO::FETCH_ASSOC),
+        static fn(array $row) => deliveryIsTransferEligible((string)($row['delivery_status'] ?? ''))
+    ));
 
     if (empty($deliveries)) {
-        header("Location: {$redirect_to}?error=" . urlencode('No active deliveries found for this rider.'));
+        $err = !empty($requested_ids)
+            ? 'No valid deliveries selected for transfer.'
+            : 'No active deliveries found for this rider.';
+        header("Location: {$redirect_to}?error=" . urlencode($err));
         exit;
     }
 
@@ -114,26 +142,12 @@ function handleBulkTransfer(PDO $conn, int $user_id): void
         }
         $scheduled_status = getValidOrderStatus($conn, 'Scheduled for Delivery', ['Scheduled for Delivery', 'Requested', 'pending']);
 
-        $del_cols = array_column($conn->query("SHOW COLUMNS FROM delivery")->fetchAll(PDO::FETCH_ASSOC), 'Field');
-        $has_assigned_id = in_array('assigned_rider_id', $del_cols);
-
         $transferred_count = 0;
         foreach ($deliveries as $delivery) {
             $delivery_id = (int)$delivery['Delivery_ID'];
             $order_id = (int)$delivery['Order_ID'];
 
-            $updates = ["delivery_status = 'Scheduled'", "updated_at = NOW()"];
-            $params = [];
-            if ($has_assigned_id) {
-                $updates[] = "assigned_rider_id = ?";
-                $params[] = $new_rider_id;
-            }
-            if (in_array('delivered_by', $del_cols)) {
-                $updates[] = "delivered_by = ?";
-                $params[] = $new_rider_name;
-            }
-            $params[] = $delivery_id;
-            $conn->prepare("UPDATE delivery SET " . implode(', ', $updates) . " WHERE Delivery_ID = ?")->execute($params);
+            deliveryApplyRiderTransfer($conn, $delivery_id, $new_rider_id, $new_rider_name);
 
             if ($order_id > 0) {
                 $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")->execute([$scheduled_status, $order_id]);
@@ -235,6 +249,30 @@ function respondDelivery($conn, bool $success, string $message, ?string $redirec
     $key = $success ? 'success' : 'error';
     header("Location: {$redirect}?{$key}=" . urlencode($message));
     exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    $get_action = $_GET['action'] ?? '';
+    if ($get_action === 'get_bulk_transfer_deliveries') {
+        header('Content-Type: application/json; charset=utf-8');
+        $source_rider_id = (int)($_GET['rider_id'] ?? 0);
+        $user_role = (int)($_SESSION['user_role'] ?? 0);
+        if (!in_array($user_role, $dashboard_ids, true) || in_array($user_role, $rider_ids, true)) {
+            echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+            exit;
+        }
+        if ($source_rider_id <= 0) {
+            echo json_encode(['success' => false, 'message' => 'Invalid rider.']);
+            exit;
+        }
+        $deliveries = deliveryFetchTransferableForRider($conn, $source_rider_id);
+        echo json_encode([
+            'success' => true,
+            'deliveries' => $deliveries,
+            'has_vehicle_issue' => deliveryRiderHasVehicleIssueDeliveries($conn, $source_rider_id),
+        ]);
+        exit;
+    }
 }
 
 // Handle different delivery operations
@@ -1230,22 +1268,7 @@ function handleTransferReturningDelivery(PDO $conn, int $user_id): void
 
     $conn->beginTransaction();
     try {
-        $del_cols = array_column($conn->query("SHOW COLUMNS FROM delivery")->fetchAll(PDO::FETCH_ASSOC), 'Field');
-        $has_assigned_id = in_array('assigned_rider_id', $del_cols);
-
-        $updates = ["delivery_status = 'Scheduled'", "updated_at = NOW()"];
-        $params = [];
-        if ($has_assigned_id) {
-            $updates[] = "assigned_rider_id = ?";
-            $params[] = $new_rider_id;
-        }
-        if (in_array('delivered_by', $del_cols)) {
-            $updates[] = "delivered_by = ?";
-            $params[] = $new_rider_name;
-        }
-        $params[] = $delivery_id;
-
-        $conn->prepare("UPDATE delivery SET " . implode(', ', $updates) . " WHERE Delivery_ID = ?")->execute($params);
+        deliveryApplyRiderTransfer($conn, $delivery_id, $new_rider_id, $new_rider_name);
 
         $order_status_col = 'order_status';
         $col_check = $conn->query("SHOW COLUMNS FROM orders WHERE Field IN ('order_status', 'status')");

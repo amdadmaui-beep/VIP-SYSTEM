@@ -16,6 +16,6 @@ try {
     $claims = jwtVerify($token);
     jsonResponse(true, ['claims' => $claims]);
 } catch (Throwable $e) {
-    jsonResponse(false, ['message' => 'Invalid or expired token', 'error' => $e->getMessage()], 401);
+    jsonResponse(false, ['message' => 'Invalid or expired token'], 401);
 }
 

@@ -1,7 +1,7 @@
 <?php
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/csrf.php';
 
 header('Content-Type: application/json; charset=utf-8');
 $isDebug = defined('APP_DEBUG') && APP_DEBUG;

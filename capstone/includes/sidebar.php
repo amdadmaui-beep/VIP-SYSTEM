@@ -100,7 +100,7 @@ if (!function_exists('renderSidebar')) {
                     <?php if ($showDeliveryDamageQueue): ?>
                     <a href="<?= $base ?>pages/delivery_damage_queue.php" class="menu-item<?= $isActive('delivery_damage_queue') ?>">
                         <i class="fas fa-clipboard-check"></i>
-                        <span>Delivery damage queue</span>
+                        <span>Damage Reports</span>
                         <?php if ($ddrPendingBadge > 0): ?>
                             <span class="menu-item-badge"><?= $ddrPendingBadge ?></span>
                         <?php endif; ?>

@@ -1,8 +1,8 @@
 <?php
 session_start();
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
 
 header('Content-Type: application/json; charset=utf-8');
 $isDebug = defined('APP_DEBUG') && APP_DEBUG;

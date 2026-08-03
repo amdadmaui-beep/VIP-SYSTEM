@@ -18,7 +18,7 @@ if (isset($_SESSION['user_role'])) {
         </div>
         <div class="modal-body" style="text-align: center; padding: 2rem;">
             <div style="width: 80px; height: 80px; border-radius: 50%; background: linear-gradient(135deg, #6366f1, #7c3aed); color: white; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: 700; margin: 0 auto 1rem;">
-                <?php echo strtoupper(substr($_SESSION['full_name'] ?? 'U', 0, 1)); ?>
+                <?php echo htmlspecialchars(strtoupper(substr($_SESSION['full_name'] ?? 'U', 0, 1)), ENT_QUOTES, 'UTF-8'); ?>
             </div>
             <h3 style="margin: 0.5rem 0 0.25rem; font-size: 1.25rem;"><?php echo htmlspecialchars($_SESSION['full_name'] ?? ''); ?></h3>
             <p style="color: #64748b; margin: 0 0 0.25rem;">@<?php echo htmlspecialchars($_SESSION['user_name'] ?? ''); ?></p>

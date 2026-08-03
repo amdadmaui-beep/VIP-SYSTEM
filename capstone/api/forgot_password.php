@@ -3,9 +3,9 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once '../includes/db.php';
-require_once '../includes/mailer.php';
-require_once '../includes/password_security.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/mailer.php';
+require_once __DIR__ . '/../includes/password_security.php';
 
 header('Content-Type: application/json; charset=utf-8');
 

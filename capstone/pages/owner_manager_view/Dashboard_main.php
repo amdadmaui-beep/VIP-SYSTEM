@@ -82,7 +82,7 @@
                 </div>
 
                 <!-- Statistics Cards grid (5 columns) -->
-                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
 
                     <!-- Total Sales -->
                     <div class="tilt-card relative bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 hover:shadow-xl hover:shadow-violet-500/20 hover:border-violet-300 transition-all duration-500 group animate-slide-up-3d delay-100 glass-panel overflow-hidden cursor-pointer"
@@ -153,29 +153,6 @@
                         </div>
                     </a>
 
-                    <!-- Accounts Receivable -->
-                    <div class="tilt-card relative bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 hover:shadow-xl hover:shadow-sky-500/20 hover:border-sky-300 transition-all duration-500 group animate-slide-up-3d delay-400 glass-panel overflow-hidden cursor-pointer"
-                         data-bar-color="#0ea5e9" data-bar-pct="<?php echo $arCount > 0 ? min(100,$arCount*10) : 20; ?>">
-                        <div class="tilt-shine"></div>
-                        <div class="stat-shimmer"></div>
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <p class="text-slate-500 font-bold text-[11px] tracking-widest uppercase mb-1.5">Accounts Receivable</p>
-                                <h3 class="text-slate-800 text-2xl font-black tracking-tight">
-                                    <span class="stat-counter" data-prefix="₱" data-value="<?php echo $arTotal; ?>" data-decimals="2">₱0.00</span>
-                                </h3>
-                            </div>
-                            <div class="bg-sky-100 text-sky-600 p-3.5 rounded-[1.25rem] group-hover:scale-110 group-hover:-rotate-6 transition-transform duration-300">
-                                <i data-lucide="wallet" class="w-6 h-6"></i>
-                            </div>
-                        </div>
-                        <div class="stat-bar-track"><div class="stat-bar-fill" style="background:#0ea5e9"></div></div>
-                        <div class="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold <?php echo $arCount > 0 ? 'bg-amber-50 text-amber-700' : 'bg-slate-50 text-slate-600 border border-slate-100'; ?>">
-                            <i data-lucide="triangle-alert" class="w-4 h-4"></i>
-                            <?php echo $arCount; ?> pending
-                        </div>
-                    </div>
-
                     <!-- Pending Orders -->
                     <div class="tilt-card relative bg-white rounded-3xl p-6 shadow-sm border border-slate-200/60 hover:shadow-xl hover:shadow-pink-500/20 hover:border-pink-300 transition-all duration-500 group animate-slide-up-3d delay-500 glass-panel overflow-hidden cursor-pointer"
                          data-bar-color="#ec4899" data-bar-pct="<?php echo min(100,$pendingOrders*12); ?>">
@@ -198,6 +175,111 @@
                             awaiting prep
                         </div>
                     </div>
+                </div>
+
+                <!-- Collectible AR Balances - Detailed Widget -->
+                <div class="bg-white rounded-3xl shadow-sm border border-slate-200/60 overflow-hidden glass-panel animate-slide-up-3d delay-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-500">
+                    <!-- Header -->
+                    <div class="p-6 md:px-8 py-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-sky-50/80 to-white">
+                        <div class="flex items-center gap-4">
+                            <div class="bg-sky-100 p-3 rounded-2xl text-sky-600 shadow-sm">
+                                <i data-lucide="wallet" class="w-6 h-6"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-black text-slate-800">Collectible AR Balances</h3>
+                                <p class="text-sm text-slate-500 font-medium"><?php echo $collectibleCustomerCount; ?> customer<?php echo $collectibleCustomerCount !== 1 ? 's' : ''; ?> with outstanding balances</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="text-right">
+                                <p class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Total Collectible</p>
+                                <p class="text-2xl font-black text-slate-800"><?php echo formatPeso($collectibleTotal); ?></p>
+                            </div>
+                            <a href="pages/accounts_receivable.php" class="inline-flex items-center gap-2 px-4 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl font-bold text-sm transition-all shadow-sm whitespace-nowrap">
+                                View All <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                            </a>
+                        </div>
+                    </div>
+                    <!-- Table -->
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80">
+                                    <th class="py-3.5 px-5 font-bold text-[10px] text-slate-500 uppercase tracking-widest border-b border-slate-200">Customer</th>
+                                    <th class="py-3.5 px-5 font-bold text-[10px] text-slate-500 uppercase tracking-widest border-b border-slate-200">Collectible</th>
+                                    <th class="py-3.5 px-5"></th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100 text-sm">
+                                <?php if (empty($collectibleARList)): ?>
+                                <tr>
+                                    <td colspan="3" class="text-center py-14 text-slate-400">
+                                        <div class="bg-emerald-50 p-4 rounded-full inline-flex mb-4">
+                                            <i data-lucide="check-circle-2" class="w-10 h-10 text-emerald-500"></i>
+                                        </div>
+                                        <p class="font-bold text-slate-600 text-lg">No outstanding AR balances</p>
+                                        <p class="text-sm font-medium mt-1">All customers are paid up!</p>
+                                    </td>
+                                </tr>
+                                <?php else: ?>
+                                <?php 
+                                $avatarBgs = ['bg-violet-600','bg-rose-500','bg-amber-500','bg-sky-500','bg-emerald-600','bg-pink-600','bg-indigo-600','bg-teal-600','bg-orange-500','bg-cyan-600'];
+                                foreach ($collectibleARList as $idx => $cust):
+                                    $cust_total = floatval($cust['total_collectible'] ?? 0);
+                                    $earliest_due = $cust['earliest_due'] ?? '';
+
+                                    $nameParts = explode(' ', trim($cust['customer_name']));
+                                    $initials = '';
+                                    foreach ($nameParts as $p) { if ($p) $initials .= strtoupper($p[0]); if (strlen($initials) >= 2) break; }
+                                    if (!$initials) $initials = '?';
+                                    $bg = $avatarBgs[$idx % count($avatarBgs)];
+
+                                    $daysOverdue = $earliest_due ? max(0, floor((strtotime('today') - strtotime($earliest_due)) / 86400)) : 0;
+                                    $ageLabel = $daysOverdue > 0 ? $daysOverdue . ' day' . ($daysOverdue !== 1 ? 's' : '') . ' overdue' : 'Current';
+                                ?>
+                                <tr class="hover:bg-sky-50/40 transition-colors group">
+                                    <td class="py-4 px-5">
+                                        <div class="flex items-center gap-3">
+                                            <div class="<?php echo $bg; ?> w-10 h-10 rounded-xl flex items-center justify-center font-black text-white text-sm shrink-0 shadow-sm transition-transform group-hover:scale-105"><?php echo htmlspecialchars($initials); ?></div>
+                                            <div>
+                                                <p class="font-bold text-slate-800"><?php echo htmlspecialchars($cust['customer_name']); ?></p>
+                                                <?php if (!empty($cust['phone_number'])): ?>
+                                                <p class="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center gap-1">
+                                                    <i data-lucide="phone" class="w-3 h-3"></i> <?php echo htmlspecialchars($cust['phone_number']); ?>
+                                                </p>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="py-4 px-5">
+                                        <p class="text-lg font-black text-slate-900"><?php echo formatPeso($cust_total); ?></p>
+                                        <p class="text-[11px] font-medium <?php echo $daysOverdue > 0 ? 'text-rose-500' : 'text-emerald-500'; ?> flex items-center gap-1 mt-0.5">
+                                            <i data-lucide="<?php echo $daysOverdue > 0 ? 'clock' : 'check-circle'; ?>" class="w-3 h-3"></i>
+                                            <?php echo $ageLabel; ?>
+                                        </p>
+                                    </td>
+                                    <td class="py-4 px-5 text-right">
+                                        <a href="pages/accounts_receivable.php" class="inline-flex items-center justify-center p-2 bg-slate-50 text-slate-500 hover:bg-sky-600 hover:text-white rounded-xl transition-all shadow-sm" title="View details">
+                                            <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php if (!empty($collectibleARList)): ?>
+                    <div class="px-5 py-4 border-t border-slate-100 bg-slate-50/80 flex flex-col sm:flex-row justify-between items-center gap-3">
+                        <p class="text-sm font-medium text-slate-500">
+                            Showing <span class="font-bold text-slate-700"><?php echo count($collectibleARList); ?></span> customer<?php echo count($collectibleARList) !== 1 ? 's' : ''; ?>
+                            &middot; <span class="font-bold text-slate-700"><?php echo $arCount; ?></span> total AR record<?php echo $arCount !== 1 ? 's' : ''; ?>
+                        </p>
+                        <a href="pages/accounts_receivable.php" class="text-sky-600 hover:text-sky-700 text-sm font-bold flex items-center gap-1.5 group">
+                            Full AR Report <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                        </a>
+                    </div>
+                    <?php endif; ?>
                 </div>
 
                 <!-- Deadline Notifications Banner -->
@@ -271,12 +353,12 @@
                             <i data-lucide="clipboard-list" class="w-5 h-5"></i>
                         </span>
                         <div>
-                            <p class="text-sm font-black"><span class="count-up" data-target="<?php echo (int)$pendingDeliveryDamageCount; ?>">0</span> delivery damage report<?php echo $pendingDeliveryDamageCount === 1 ? '' : 's'; ?> awaiting review</p>
-                            <p class="text-xs font-semibold text-amber-800/80">Approve or reject to adjust inventory.</p>
+                            <p class="text-sm font-black"><span class="count-up" data-target="<?php echo (int)$pendingDeliveryDamageCount; ?>">0</span> rider damage report<?php echo $pendingDeliveryDamageCount === 1 ? '' : 's'; ?> awaiting review</p>
+                            <p class="text-xs font-semibold text-amber-800/80">Approve or reject rider reports in Damage Reports.</p>
                         </div>
                     </div>
                     <a href="<?php echo htmlspecialchars(deliveryDamageQueueHrefForUser($conn, $ddrRoleId)); ?>" class="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-black text-white hover:bg-amber-700 transition-colors shrink-0">
-                        Open queue <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        View Damage Reports <i data-lucide="arrow-right" class="w-4 h-4"></i>
                     </a>
                 </div>
                 <?php endif; ?>
@@ -834,41 +916,162 @@
     <div id="cursorAura"></div>
 
     <!-- Low Stock Modal -->
+    <style>
+        #lowStockTable th {
+            font-size: 0.8125rem;
+            letter-spacing: 0.06em;
+        }
+        #lowStockTable tbody td {
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+        #lowStockTable .low-stock-product {
+            font-size: 1.0625rem;
+            font-weight: 700;
+        }
+        #lowStockTable .low-stock-qty {
+            font-size: 1.125rem;
+            font-weight: 800;
+        }
+        #lowStockTable .low-stock-limit,
+        #lowStockTable .low-stock-restock {
+            font-size: 1.0625rem;
+            font-weight: 700;
+        }
+        .low-stock-print-only { display: none !important; }
+        @media print {
+            @page { margin: 0.5in; }
+            body * { visibility: hidden; }
+            #lowStockModal,
+            #lowStockModal * { visibility: visible; }
+            #lowStockModal {
+                position: absolute !important;
+                inset: 0 !important;
+                display: flex !important;
+                background: white !important;
+                backdrop-filter: none !important;
+                z-index: 99999 !important;
+                padding: 0 !important;
+            }
+            #lowStockModal > div {
+                max-width: 100% !important;
+                max-height: none !important;
+                width: 100% !important;
+                height: auto !important;
+                box-shadow: none !important;
+                border-radius: 0 !important;
+                overflow: visible !important;
+            }
+            .low-stock-no-print { display: none !important; }
+            .low-stock-print-only { display: block !important; }
+            #lowStockModalBody {
+                overflow: visible !important;
+                padding: 0 1rem 1rem !important;
+                background: white !important;
+            }
+            #lowStockTable th {
+                font-size: 11pt !important;
+                color: #000 !important;
+                padding: 10px 12px !important;
+            }
+            #lowStockTable tbody td {
+                font-size: 12pt !important;
+                padding: 10px 12px !important;
+                color: #000 !important;
+            }
+            #lowStockTable .low-stock-qty {
+                font-size: 13pt !important;
+                font-weight: 800 !important;
+            }
+            #lowStockTable tr.hidden { display: none !important; }
+            #lowStockTable {
+                border-collapse: collapse !important;
+            }
+            #lowStockTable th,
+            #lowStockTable td {
+                border: 1px solid #cbd5e1 !important;
+            }
+        }
+    </style>
     <div id="lowStockModal" class="hidden fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
         <div class="bg-white rounded-[2rem] shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden animate-slide-up">
             <!-- Header -->
-            <div class="bg-gradient-to-r from-amber-500 to-rose-500 px-8 py-6 flex justify-between items-center text-white shrink-0 border-b border-amber-600/30">
+            <div class="low-stock-no-print bg-gradient-to-r from-amber-500 to-rose-500 px-8 py-6 flex justify-between items-center text-white shrink-0 border-b border-amber-600/30">
                 <div>
                     <h3 class="text-2xl font-black flex items-center gap-3 drop-shadow-md">
                         <i data-lucide="triangle-alert" class="w-8 h-8 text-amber-200"></i> Low Stock Alerts
                     </h3>
-                    <p class="text-amber-50 font-medium mt-1 text-sm">Items visually tracked below your safety thresholds. Restock soon to prevent outages.</p>
+                    <p class="text-amber-50 font-medium mt-1 text-base">Items visually tracked below your safety thresholds. Restock soon to prevent outages.</p>
                 </div>
                 <button id="lowStockModalClose" class="w-12 h-12 bg-white/20 hover:bg-white/30 border-2 border-white/30 rounded-2xl flex items-center justify-center transition-all hover:rotate-90 shadow-sm focus:outline-none">
                     <i data-lucide="x" class="w-6 h-6"></i>
                 </button>
             </div>
             <!-- Toolbar -->
-            <div class="px-8 py-5 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between bg-slate-50/80 shrink-0">
+            <div class="low-stock-no-print px-8 py-5 border-b border-slate-100 flex flex-wrap gap-4 items-center justify-between bg-slate-50/80 shrink-0">
                 <div class="relative w-full md:w-96 group">
                     <i data-lucide="search" class="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-violet-600 transition-colors"></i>
-                    <input type="text" id="lowStockSearch" placeholder="Search products..." class="w-full pl-11 pr-4 py-3 bg-white border-2 border-slate-200 focus:border-violet-600 focus:ring-4 focus:ring-violet-600/10 rounded-xl outline-none font-medium transition-all shadow-sm">
+                    <input type="text" id="lowStockSearch" placeholder="Search products..." class="w-full pl-11 pr-4 py-3 text-base bg-white border-2 border-slate-200 focus:border-violet-600 focus:ring-4 focus:ring-violet-600/10 rounded-xl outline-none font-medium transition-all shadow-sm">
                 </div>
                 <div class="flex flex-wrap items-center gap-3">
-                    <div id="lowStockCountPill" class="px-4 py-2.5 bg-amber-100 border-2 border-amber-200 text-amber-800 rounded-xl font-bold text-sm shadow-sm whitespace-nowrap">
-                        Loading...
+                    <div id="lowStockCountPill" class="px-4 py-2.5 bg-amber-100 border-2 border-amber-200 text-amber-800 rounded-xl font-bold text-base shadow-sm whitespace-nowrap">
+                        <i data-lucide="bell" class="w-4 h-4 inline-block mr-1"></i> <?php echo count($lowStockProducts); ?> alert<?php echo count($lowStockProducts) !== 1 ? 's' : ''; ?>
                     </div>
-                    <a href="pages/inventory.php" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-sm flex items-center gap-2 shadow-md transition-all whitespace-nowrap">
+                    <button type="button" id="lowStockPrintBtn" class="px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-bold text-base flex items-center gap-2 shadow-md transition-all whitespace-nowrap">
+                        <i data-lucide="printer" class="w-4 h-4"></i> Print
+                    </button>
+                    <a href="pages/inventory.php" class="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-base flex items-center gap-2 shadow-md transition-all whitespace-nowrap">
                         <i data-lucide="boxes" class="w-4 h-4"></i> View Inventory
                     </a>
                 </div>
             </div>
             <!-- Body -->
             <div id="lowStockModalBody" class="flex-1 overflow-y-auto custom-scrollbar p-6 md:p-8 bg-slate-50/50">
-                <div class="py-20 text-center text-slate-400 flex flex-col items-center">
-                    <i data-lucide="loader-circle" class="w-10 h-10 animate-spin text-violet-600 mb-4"></i>
-                    <p class="font-bold text-lg text-slate-600">Loading alerts securely...</p>
+                <div class="low-stock-print-only mb-4 pb-3 border-b-2 border-slate-300">
+                    <h2 class="text-2xl font-black text-slate-900">Low Stock Alerts Report</h2>
+                    <p class="text-base font-semibold text-slate-600 mt-1">Generated on <?php echo date('F j, Y \a\t g:i A'); ?></p>
+                    <p class="text-base font-bold text-amber-700 mt-1"><?php echo count($lowStockProducts); ?> product<?php echo count($lowStockProducts) !== 1 ? 's' : ''; ?> below safety threshold</p>
                 </div>
+                <?php if (empty($lowStockProducts)): ?>
+                <div class="text-center py-16 text-slate-400 flex flex-col items-center">
+                    <div class="bg-emerald-50 p-6 rounded-[2rem] mb-6">
+                        <i data-lucide="shield-check" class="w-16 h-16 text-emerald-500"></i>
+                    </div>
+                    <div class="font-black text-slate-800 text-2xl mb-2">No low stock alerts</div>
+                    <div class="font-medium text-slate-500">Everything is safely within expected threshold levels.</div>
+                </div>
+                <?php else: ?>
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table id="lowStockTable" class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50/80">
+                                    <th class="py-4 px-6 font-bold text-slate-600 uppercase tracking-widest border-b-2 border-slate-200">Product Name</th>
+                                    <th class="py-4 px-6 font-bold text-slate-600 uppercase tracking-widest border-b-2 border-slate-200">Current Qty</th>
+                                    <th class="py-4 px-6 font-bold text-slate-600 uppercase tracking-widest border-b-2 border-slate-200">Storage Limit</th>
+                                    <th class="py-4 px-6 font-bold text-slate-600 uppercase tracking-widest border-b-2 border-slate-200">Qty Needed to Restock</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <?php foreach ($lowStockProducts as $lp):
+                                    $restockQty = max(0, (float)$lp['storage_limit'] - (float)$lp['current_qty']);
+                                ?>
+                                <tr class="low-stock-row hover:bg-amber-50/40 transition-colors group" data-name="<?php echo htmlspecialchars(strtolower($lp['product_name'])); ?>">
+                                    <td class="py-4 px-6 low-stock-product text-slate-900"><?php echo htmlspecialchars($lp['product_name']); ?></td>
+                                    <td class="py-4 px-6">
+                                        <span class="low-stock-qty <?php echo (float)$lp['current_qty'] <= 0 ? 'text-rose-600' : 'text-amber-600'; ?>">
+                                            <?php echo number_format((float)$lp['current_qty']); ?>
+                                        </span>
+                                    </td>
+                                    <td class="py-4 px-6 low-stock-limit text-slate-700"><?php echo number_format((float)$lp['storage_limit']); ?></td>
+                                    <td class="py-4 px-6 low-stock-restock text-slate-900"><?php echo number_format($restockQty); ?></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -893,74 +1096,13 @@
             document.body.classList.remove('modal-active');
         }
 
-        function renderLowStockList(alerts) {
-            const body = document.getElementById('lowStockModalBody');
-            const pill = document.getElementById('lowStockCountPill');
-            if (!body || !pill) return;
-
-            pill.innerHTML = `<i data-lucide="bell" class="w-4 h-4 inline-block mr-1"></i> ${alerts.length} alert${alerts.length !== 1 ? 's' : ''}`;
-            lucide.createIcons();
-
-            if (!alerts.length) {
-                body.innerHTML = `
-                <div class="text-center py-16 text-slate-400 flex flex-col items-center">
-                    <div class="bg-emerald-50 p-6 rounded-[2rem] mb-6">
-                        <i data-lucide="shield-check" class="w-16 h-16 text-emerald-500"></i>
-                    </div>
-                    <div class="font-black text-slate-800 text-2xl mb-2">No low stock alerts</div>
-                    <div class="font-medium text-slate-500">Everything is safely within expected threshold levels.</div>
-                </div>
-                `;
-                lucide.createIcons();
+        function printLowStockTable() {
+            const table = document.getElementById('lowStockTable');
+            if (!table) {
+                alert('No low stock data to print.');
                 return;
             }
-
-            body.innerHTML = `
-            <div id="lowStockList" class="grid gap-4">
-                ${alerts.map((a, idx) => `
-                    <div class="low-stock-item group relative overflow-hidden bg-white border border-slate-200 border-l-[6px] border-l-amber-500 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all" data-name="${String(a.item || '').toLowerCase()}">
-                        <div class="flex flex-col md:flex-row justify-between gap-6 md:items-start">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-3 mb-2">
-                                    <div class="bg-amber-100 p-2 rounded-xl text-amber-600"><i data-lucide="triangle-alert" class="w-5 h-5"></i></div>
-                                    <div class="font-bold text-slate-800 text-lg">${escapeHtml(a.item || 'Unknown Product')}</div>
-                                </div>
-                                <div class="text-slate-500 text-sm pl-11">${escapeHtml(a.message || 'Stock level is below safety threshold.')}</div>
-                            </div>
-                            <button type="button" class="js-toggle-rec shrink-0 px-4 py-2.5 bg-slate-50 hover:bg-violet-600 border border-slate-200 hover:border-violet-600 text-slate-700 hover:text-white rounded-xl font-bold text-sm transition-all focus:outline-none flex items-center justify-center gap-2" data-idx="${idx}">
-                                <i data-lucide="lightbulb" class="w-4 h-4"></i> Resolve
-                            </button>
-                        </div>
-                        <div class="js-rec hidden mt-4 bg-amber-50 border border-amber-200 p-5 rounded-2xl animate-slide-up" id="rec_${idx}">
-                            <div class="flex items-center gap-2 font-black text-amber-800 text-xs uppercase tracking-widest mb-2"><i data-lucide="map" class="w-4 h-4"></i> Action Plan</div>
-                            <div class="text-amber-900/80 text-sm font-medium leading-relaxed">${escapeHtml(a.recommendation || 'Please review inventory levels and consider restocking immediately.')}</div>
-                        </div>
-                    </div>
-                `).join('')}
-            </div>
-            `;
-            lucide.createIcons();
-            
-            body.querySelectorAll('.js-toggle-rec').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const idx = btn.getAttribute('data-idx');
-                    const rec = document.getElementById('rec_' + idx);
-                    if (!rec) return;
-                    const isHidden = rec.classList.contains('hidden');
-                    if (isHidden) {
-                        rec.classList.remove('hidden');
-                        btn.innerHTML = `<i data-lucide="chevron-up" class="w-4 h-4"></i> Close`;
-                        btn.classList.add('bg-slate-800', 'text-white', 'border-slate-800');
-                        btn.classList.remove('bg-slate-50', 'text-slate-700');
-                    } else {
-                        rec.classList.add('hidden');
-                        btn.innerHTML = `<i data-lucide="lightbulb" class="w-4 h-4"></i> Resolve`;
-                        btn.classList.remove('bg-slate-800', 'text-white', 'border-slate-800');
-                        btn.classList.add('bg-slate-50', 'text-slate-700');
-                    }
-                    lucide.createIcons();
-                });
-            });
+            window.print();
         }
 
         function escapeHtml(s) {
@@ -970,29 +1112,6 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
-        }
-
-        async function loadLowStockAlertsIntoModal() {
-            const body = document.getElementById('lowStockModalBody');
-            const pill = document.getElementById('lowStockCountPill');
-            if (body) {
-                body.innerHTML = '<div class="py-16 text-center text-slate-400 font-medium flex flex-col items-center"><i data-lucide="loader-2" class="w-10 h-10 animate-spin text-violet-500 mb-3"></i> Loading alerts...</div>';
-                lucide.createIcons();
-            }
-            if (pill) pill.textContent = 'Loading...';
-
-            try {
-                const res = await fetch('api/dss_backend.php');
-                const json = await res.json();
-                const alerts = (json?.success && Array.isArray(json.data)) ? json.data : [];
-                const low = alerts.filter(a => String(a.title || '').toLowerCase().includes('low stock'));
-                renderLowStockList(low);
-            } catch(err) {
-                 if (body) {
-                     body.innerHTML = '<div class="py-16 text-center text-rose-500 font-medium">Failed to load stock alerts.</div>';
-                 }
-                 if(pill) pill.textContent = 'Error';
-            }
         }
 
         // =============================================
@@ -1334,23 +1453,24 @@
             // Low stock modal
             const lowStocksCard = document.getElementById('lowStocksCard');
             const closeBtn = document.getElementById('lowStockModalClose');
+            const printBtn = document.getElementById('lowStockPrintBtn');
             const modal = document.getElementById('lowStockModal');
             const search = document.getElementById('lowStockSearch');
 
-            lowStocksCard?.addEventListener('click', async (e) => {
+            lowStocksCard?.addEventListener('click', (e) => {
                 e.preventDefault();
                 openLowStockModal();
-                await loadLowStockAlertsIntoModal();
             });
+            printBtn?.addEventListener('click', printLowStockTable);
             closeBtn?.addEventListener('click', closeLowStockModal);
             modal?.addEventListener('click', (e) => { if (e.target === modal) closeLowStockModal(); });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !modal?.classList.contains('hidden')) closeLowStockModal(); });
 
             search?.addEventListener('input', () => {
                 const q = String(search.value || '').toLowerCase();
-                document.querySelectorAll('#lowStockList .low-stock-item').forEach(el => {
+                document.querySelectorAll('#lowStockTable .low-stock-row').forEach(el => {
                     const name = el.getAttribute('data-name') || '';
-                    if(name.includes(q)) el.classList.remove('hidden'); else el.classList.add('hidden');
+                    if (name.includes(q)) el.classList.remove('hidden'); else el.classList.add('hidden');
                 });
             });
 
@@ -1700,6 +1820,7 @@
     <!-- ========================================
          AI ASSISTANT FLOATING WIDGET
     ======================================== -->
+    <?php if (defined('VIP_AI_ASSISTANT_ENABLED') && VIP_AI_ASSISTANT_ENABLED): ?>
     <div id="aiAssistantWidget" class="fixed bottom-6 right-6 z-[9998] flex flex-col items-end gap-3">
         <!-- Chat Panel -->
         <div id="aiChatPanel" class="hidden w-[340px] bg-white rounded-3xl shadow-2xl shadow-violet-900/15 border border-slate-100 flex flex-col overflow-hidden" style="max-height:480px;">
@@ -1757,4 +1878,5 @@
             <span id="aiUnreadBadge" class="hidden absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-500 text-white text-[10px] font-black rounded-full flex items-center justify-center border-2 border-white">1</span>
         </button>
     </div>
+    <?php endif; ?>
 

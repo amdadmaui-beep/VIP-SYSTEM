@@ -65,6 +65,67 @@ if (!function_exists('isInventoryStaffRole')) {
     }
 }
 
+if (!function_exists('damageGoodsHasPhotoColumn')) {
+    function damageGoodsHasPhotoColumn(PDO $conn): bool
+    {
+        try {
+            $cols = $conn->query('SHOW COLUMNS FROM damage_goods')->fetchAll(PDO::FETCH_COLUMN);
+            return in_array('photo_path', $cols, true);
+        } catch (Throwable $e) {
+            return false;
+        }
+    }
+}
+
+if (!function_exists('fetchStaffDamageReportsForManager')) {
+    /**
+     * Damage goods reported by inventory staff (manual adjustment damage reasons).
+     *
+     * @return list<array<string, mixed>>
+     */
+    function fetchStaffDamageReportsForManager(PDO $conn, int $limit = 50): array
+    {
+        if (!function_exists('getInventoryStaffRoleIds')) {
+            require_once __DIR__ . '/roles_helper.php';
+        }
+        $staffRoleIds = getInventoryStaffRoleIds($conn);
+        if (empty($staffRoleIds)) {
+            return [];
+        }
+
+        try {
+            $tableCheck = $conn->query("SHOW TABLES LIKE 'damage_goods'");
+            if (!$tableCheck || $tableCheck->rowCount() === 0) {
+                return [];
+            }
+        } catch (Throwable $e) {
+            return [];
+        }
+
+        $photoSelect = damageGoodsHasPhotoColumn($conn) ? 'dg.photo_path' : 'NULL AS photo_path';
+        $placeholders = implode(',', array_fill(0, count($staffRoleIds), '?'));
+
+        $sql = "SELECT dg.Damage_ID, dg.quantity, dg.damage_type, dg.reason, {$photoSelect},
+                       dg.created_at, p.product_name,
+                       u.full_name AS reported_by_name, u.user_name AS reported_by_username
+                FROM damage_goods dg
+                INNER JOIN stockin_inventory si ON dg.Inventory_ID = si.Inventory_ID
+                INNER JOIN products p ON si.Product_ID = p.Product_ID
+                INNER JOIN user u ON dg.reported_by = u.User_ID
+                WHERE u.Role_ID IN ({$placeholders})
+                ORDER BY dg.created_at DESC
+                LIMIT " . (int) $limit;
+
+        try {
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($staffRoleIds);
+            return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+}
+
 if (!function_exists('deliveryDamageQueueHrefForUser')) {
     /**
      * Inventory staff use the mobile staff queue page; owners/managers use the main dashboard queue.

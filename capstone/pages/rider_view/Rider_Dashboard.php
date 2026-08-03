@@ -1,6 +1,6 @@
     <!-- Dashboard Tab -->
     <?php if ($can_rider_dashboard): ?>
-    <div id="tab-dashboard" class="tab-content staggered-group">
+    <div id="tab-dashboard" class="tab-content staggered-group" style="display:<?= $activeTab === 'dashboard' ? 'block' : 'none' ?>">
         <div class="row g-2 mb-3 staggered-group">
             <div class="col-6">
                 <div class="stat-card bg-blue">
@@ -53,12 +53,16 @@
                             <button type="button" onclick="backToDuty()" class="btn btn-light btn-sm" style="font-weight:700; border-radius:999px; padding:0.4rem 1.2rem;">
                                 <i class="fas fa-undo-alt"></i> Back to Duty
                             </button>
+                        <?php elseif ($count_pending > 0): ?>
+                            <button type="button" onclick="promptReportVehicleIssue()" class="btn btn-light btn-sm" style="font-weight:700; border-radius:999px; padding:0.4rem 1rem; color:#92400e;">
+                                <i class="fas fa-truck-monster"></i> Vehicle Issue
+                            </button>
                         <?php endif; ?>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="delivery-queue-card mb-4" onclick="switchToTab('queue')">
+        <div class="delivery-queue-card mb-4" onclick="location.href='rider_view.php?tab=queue'">
             <div class="card-content">
                 <h2 class="card-title">Ready for your next delivery?</h2>
                 <p class="card-subtitle">You have <?= $count_pending ?> order<?= $count_pending != 1 ? 's' : '' ?> waiting in<br>your queue.</p>

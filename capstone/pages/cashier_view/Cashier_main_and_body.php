@@ -37,7 +37,7 @@
                         <span><?php echo htmlspecialchars($full_name); ?></span>
                     </div>
                 </div>
-                <?php require_once '../includes/profile_modal.php'; ?>
+                <?php require_once __DIR__ . '/../../includes/profile_modal.php'; ?>
                 <a href="#" onclick="confirmLogout(event)" class="btn-exit" title="Logout"><i class="fas fa-sign-out-alt"></i></a>
             </div>
         </header>

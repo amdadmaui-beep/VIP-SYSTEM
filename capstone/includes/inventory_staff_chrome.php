@@ -244,3 +244,135 @@ function inv_chrome_render_header_block(array $c): void
 {
     inv_chrome_render_header_main($c);
 }
+
+/**
+ * Get products whose current quantity is below safety threshold.
+ * Returns array of [Product_ID, product_name, current_quantity, safety_stock, storage_limit].
+ */
+function getLowStockProducts(PDO $conn): array
+{
+    $productsCols = [];
+    $pc = $conn->query("SHOW COLUMNS FROM products");
+    if ($pc) {
+        while ($c = $pc->fetch(PDO::FETCH_ASSOC)) {
+            $productsCols[] = $c['Field'];
+        }
+    }
+    $hasSafetyStock = in_array('safety_stock', $productsCols, true);
+    $hasDiscontinued = in_array('is_discontinued', $productsCols, true);
+    $discontinuedWhere = $hasDiscontinued ? 'WHERE p.is_discontinued = 0' : '';
+
+    $sql = "SELECT p.Product_ID, p.product_name,
+                   COALESCE((
+                       SELECT quantity FROM stockin_inventory
+                       WHERE Product_ID = p.Product_ID
+                       ORDER BY COALESCE(updated_at, created_at, date_in) DESC, Inventory_ID DESC
+                       LIMIT 1
+                   ), 0) AS current_quantity,
+                   " . ($hasSafetyStock ? 'COALESCE(p.safety_stock, 20)' : '20') . " AS safety_stock,
+                   COALESCE((
+                       SELECT storage_limit FROM stockin_inventory
+                       WHERE Product_ID = p.Product_ID
+                       ORDER BY COALESCE(updated_at, created_at, date_in) DESC, Inventory_ID DESC
+                       LIMIT 1
+                   ), 100) AS storage_limit
+            FROM products p
+            {$discontinuedWhere}
+            HAVING current_quantity > 0 AND current_quantity <= safety_stock
+            ORDER BY (safety_stock - current_quantity) DESC
+            LIMIT 50";
+    $stmt = $conn->query($sql);
+    return $stmt ? $stmt->fetchAll(PDO::FETCH_ASSOC) : [];
+}
+
+/**
+ * Get email addresses of users with given role IDs.
+ * Returns array of [email, full_name].
+ */
+function getStaffEmailsByRoleIds(PDO $conn, array $roleIds): array
+{
+    if (empty($roleIds)) return [];
+    $placeholders = implode(',', array_fill(0, count($roleIds), '?'));
+    $sql = "SELECT DISTINCT u.user_name, up.email, u.full_name
+            FROM user u
+            LEFT JOIN User_Profile up ON u.User_ID = up.User_ID
+            WHERE u.Role_ID IN ({$placeholders})
+              AND u.is_active = 1
+              AND up.email IS NOT NULL
+              AND TRIM(up.email) <> ''";
+    $stmt = $conn->prepare($sql);
+    $stmt->execute($roleIds);
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Ensure the low_stock_email_log tracking table exists.
+ */
+function ensureLowStockEmailLogTable(PDO $conn): void
+{
+    $conn->exec("CREATE TABLE IF NOT EXISTS low_stock_email_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        product_count INT NOT NULL DEFAULT 0,
+        recipient_count INT NOT NULL DEFAULT 0
+    )");
+}
+
+/**
+ * Get number of low-stock alert emails sent today.
+ */
+function getLowStockEmailTodayCount(PDO $conn): int
+{
+    $stmt = $conn->query("SELECT COUNT(*) AS cnt FROM low_stock_email_log WHERE DATE(sent_at) = CURDATE()");
+    if ($stmt && $row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        return (int)$row['cnt'];
+    }
+    return 0;
+}
+
+/**
+ * Log a low-stock alert email send.
+ */
+function logLowStockEmailSent(PDO $conn, int $productCount, int $recipientCount): void
+{
+    $stmt = $conn->prepare("INSERT INTO low_stock_email_log (product_count, recipient_count) VALUES (?, ?)");
+    $stmt->execute([$productCount, $recipientCount]);
+}
+
+/**
+ * Send low stock alert emails to relevant staff.
+ * Call after stock-in, adjustment, or on dashboard load.
+ * Returns array with 'sent' count and 'errors'.
+ */
+function notifyLowStockToStaff(PDO $conn): array
+{
+    require_once __DIR__ . '/mailer.php';
+    require_once __DIR__ . '/roles_helper.php';
+
+    ensureLowStockEmailLogTable($conn);
+
+    $todayCount = getLowStockEmailTodayCount($conn);
+    if ($todayCount >= 3) {
+        return ['sent' => 0, 'errors' => [], 'reason' => 'daily limit reached (3/3)'];
+    }
+
+    $lowProducts = getLowStockProducts($conn);
+    if (empty($lowProducts)) {
+        return ['sent' => 0, 'errors' => [], 'reason' => 'no low stock products'];
+    }
+
+    $managerIds = getManagerRoleIds($conn);
+    $invIds = getInventoryStaffRoleIds($conn);
+    $allIds = array_values(array_unique(array_merge($managerIds, $invIds)));
+    $recipients = getStaffEmailsByRoleIds($conn, $allIds);
+
+    if (empty($recipients)) {
+        return ['sent' => 0, 'errors' => [], 'reason' => 'no staff emails found'];
+    }
+
+    $result = sendLowStockAlertEmail($recipients, $lowProducts);
+    if (!empty($result['sent'])) {
+        logLowStockEmailSent($conn, count($lowProducts), (int)$result['sent']);
+    }
+    return $result;
+}

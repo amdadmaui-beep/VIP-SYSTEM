@@ -1,13 +1,13 @@
 <?php
 declare(strict_types=1);
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/logger.php';
-require_once '../includes/csrf.php';
-require_once '../includes/rate_limiter.php';
-require_once '../includes/roles_helper.php';
-require_once '../includes/services/orders_service.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/rate_limiter.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/services/orders_service.php';
 
 $orders_allowed_roles = getManagementRoleIds($conn);
 $cashier_ids = getCashierRoleIds($conn);

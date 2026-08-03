@@ -136,6 +136,18 @@ $_SESSION['full_name'] = (string) ($user['full_name'] ?? '');
 $_SESSION['user_name'] = (string) ($user['user_name'] ?? '');
 $_SESSION['last_activity'] = time();
 
+// Issue a signed JWT for this session (consumable via Bearer header by hydrateSessionFromJwtIfPresent / API clients)
+try {
+    $_SESSION['jwt'] = jwtIssue([
+        'sub' => (int) $user['User_ID'],
+        'username' => (string) ($user['user_name'] ?? ''),
+        'name' => (string) ($user['full_name'] ?? ''),
+        'role' => $roleId,
+    ]);
+} catch (Throwable $e) {
+    error_log('JWT issuance failed: ' . $e->getMessage());
+}
+
 unset($_SESSION['login_captchas'], $_SESSION['login_captcha_id']);
 
 $redirect = vip_post_login_redirect_relative($conn, $roleId);

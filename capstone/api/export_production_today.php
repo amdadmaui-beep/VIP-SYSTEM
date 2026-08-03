@@ -3,7 +3,7 @@
 // No auth redirect here so it never bounces to the homepage
 
 require_once __DIR__ . '/../includes/auth.php';
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 try {
 
 // Determine export date range:

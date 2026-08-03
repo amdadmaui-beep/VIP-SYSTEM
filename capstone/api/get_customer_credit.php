@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: application/json');
 require_once __DIR__ . '/../includes/auth.php';
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 
 try {
     $customer_id = intval($_GET['customer_id'] ?? 0);
@@ -24,15 +24,19 @@ try {
     $row = $stmt->fetch();
 
     if ($row) {
-        $is_over_limit = $row['total_unpaid'] > $row['credit_limit'];
+        $total_unpaid = floatval($row['total_unpaid']);
+        $credit_limit = floatval($row['credit_limit']);
+        $is_over_limit = $credit_limit > 0 && $total_unpaid >= $credit_limit;
+        $available_credit = $credit_limit > 0 ? max(0, $credit_limit - $total_unpaid) : 0;
         echo json_encode([
             'success' => true,
             'data' => [
                 'customer_name' => $row['customer_name'],
-                'credit_limit' => floatval($row['credit_limit']),
-                'total_unpaid' => floatval($row['total_unpaid']),
+                'credit_limit' => $credit_limit,
+                'total_unpaid' => $total_unpaid,
                 'is_over_limit' => $is_over_limit,
-                'recommendation' => $is_over_limit ? 'Credit Limit Exceeded! Recommendation: Cash-Only transaction.' : ''
+                'available_credit' => $available_credit,
+                'recommendation' => $is_over_limit ? 'Credit limit fully used. Recommend Cash-Only transactions until payment is received.' : ''
             ]
         ]);
     } else {

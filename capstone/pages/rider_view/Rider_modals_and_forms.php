@@ -1,6 +1,6 @@
 
 <!-- Delivery Detail Modal -->
-<div class="modal fade" id="detailModal" tabindex="-1">
+<div class="modal fade" id="detailModal" tabindex="-1" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
         <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">
@@ -99,7 +99,7 @@
 </div> <!-- rider-wrapper end -->
 
 <!-- COD Confirmation Modal -->
-<div class="modal fade" id="codModal" tabindex="-1">
+<div class="modal fade" id="codModal" tabindex="-1" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">
@@ -286,7 +286,7 @@
 </form>
 
 <?php if (!empty($has_delivery_damage_reports)): ?>
-<div class="modal fade" id="damageReportModal" tabindex="-1" aria-labelledby="damageReportModalLabel" aria-hidden="true">
+<div class="modal fade" id="damageReportModal" tabindex="-1" aria-labelledby="damageReportModalLabel" aria-hidden="true" data-bs-backdrop="false">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content rounded-[24px] border-0">
             <div class="modal-header border-0 bg-white px-6 pt-6 pb-0">

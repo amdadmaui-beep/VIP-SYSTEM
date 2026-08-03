@@ -10,12 +10,12 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/logger.php';
-require_once '../includes/module_access.php';
-require_once '../includes/csrf.php'; // CSRF Protection - Security Fix
-require_once '../includes/password_security.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/module_access.php';
+require_once __DIR__ . '/../includes/csrf.php'; // CSRF Protection - Security Fix
+require_once __DIR__ . '/../includes/password_security.php';
 
 // Required roles: Owner (1), Manager (2)
 requireRole([1, 2]);
@@ -26,7 +26,8 @@ if (!function_exists('userManagementRedirectUrl')) {
         if (in_array($status_filter, ['active', 'deactivated', 'all'], true)) {
             $params['status_filter'] = $status_filter;
         }
-        return '../pages/user_management.php' . (!empty($params) ? ('?' . http_build_query($params)) : '');
+        $prefix = (basename((string)($_SERVER['SCRIPT_NAME'] ?? '')) === 'user_management_backend.php') ? '../pages/' : '';
+        return $prefix . 'user_management.php' . (!empty($params) ? ('?' . http_build_query($params)) : '');
     }
 }
 
@@ -72,8 +73,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Password strength validation
         if (!empty($password)) {
-            if (strlen($password) < 6) $errors[] = "Password must be at least 6 characters.";
+            if (strlen($password) < 10) $errors[] = "Password must be at least 10 characters.";
             if (strlen($password) > 100) $errors[] = "Password must not exceed 100 characters.";
+            if (strlen($password) >= 10 && strlen($password) <= 100) {
+                if (!preg_match('/[A-Z]/', $password)) $errors[] = "Password must include at least one uppercase letter.";
+                if (!preg_match('/[a-z]/', $password)) $errors[] = "Password must include at least one lowercase letter.";
+                if (!preg_match('/\d/', $password)) $errors[] = "Password must include at least one number.";
+                if (!preg_match('/[^A-Za-z0-9]/', $password)) $errors[] = "Password must include at least one special character.";
+            }
         }
         
         // Email validation
@@ -184,8 +191,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Password validation (if provided)
         if (!empty($password)) {
-            if (strlen($password) < 6) $errors[] = "Password must be at least 6 characters.";
+            if (strlen($password) < 10) $errors[] = "Password must be at least 10 characters.";
             if (strlen($password) > 100) $errors[] = "Password must not exceed 100 characters.";
+            if (strlen($password) >= 10 && strlen($password) <= 100) {
+                if (!preg_match('/[A-Z]/', $password)) $errors[] = "Password must include at least one uppercase letter.";
+                if (!preg_match('/[a-z]/', $password)) $errors[] = "Password must include at least one lowercase letter.";
+                if (!preg_match('/\d/', $password)) $errors[] = "Password must include at least one number.";
+                if (!preg_match('/[^A-Za-z0-9]/', $password)) $errors[] = "Password must include at least one special character.";
+            }
         }
         
         // Email validation

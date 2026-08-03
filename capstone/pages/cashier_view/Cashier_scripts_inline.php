@@ -375,34 +375,18 @@ function renderShiftDashboard(shift, totals) {
             </div>
 
             <!-- Breakdown Grid -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+            <div style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-bottom: 2rem; max-width: 320px; margin-left: auto; margin-right: auto;">
                 <!-- Gross Sales -->
                 <div style="background: #f8fafc; border: 1px solid var(--pos-border); border-radius: 14px; padding: 1.25rem; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.01);">
                     <div style="font-size: 0.7rem; color: var(--pos-text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Gross Sales</div>
                     <div style="font-size: 1.35rem; font-weight: 850; color: var(--pos-primary);">${formatCurrency(t.gross_sales)}</div>
                     <div style="font-size: 0.7rem; color: var(--pos-text-muted); margin-top: 0.25rem;">Total invoices issued</div>
                 </div>
-
-                <!-- Accounts Receivable -->
-                <div style="background: #f8fafc; border: 1px solid var(--pos-border); border-radius: 14px; padding: 1.25rem; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.01);">
-                    <div style="font-size: 0.7rem; color: var(--pos-text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Credit / AR</div>
-                    <div style="font-size: 1.35rem; font-weight: 850; color: #6366f1;">${formatCurrency(t.credit_sales)}</div>
-                    <div style="font-size: 0.7rem; color: var(--pos-text-muted); margin-top: 0.25rem;">Credit terms extended</div>
-                </div>
-
-                <!-- Voids -->
-                <div style="background: #f8fafc; border: 1px solid var(--pos-border); border-radius: 14px; padding: 1.25rem; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.01);">
-                    <div style="font-size: 0.7rem; color: var(--pos-text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.5rem;">Voids</div>
-                    <div style="font-size: 1.35rem; font-weight: 850; color: #dc2626;">${t.void_count || 0} <span style="font-size: 0.95rem; font-weight: 600;">(${formatCurrency(t.void_amount)})</span></div>
-                    <div style="font-size: 0.7rem; color: var(--pos-text-muted); margin-top: 0.25rem;">Voided transactions</div>
-                </div>
             </div>
 
             <!-- Action Buttons -->
             <div style="display: flex; gap: 1rem;">
-                <button class="btn" onclick="requestXRead()" style="flex: 1; padding: 1rem 1.5rem; background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(59, 130, 246, 0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.2)';">
-                    <i class="fas fa-file-invoice" style="font-size: 1.1rem;"></i> X-Read Summary
-                </button>
+
                 <button class="btn" onclick="openClosingCount()" style="flex: 1; padding: 1rem 1.5rem; background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%); color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 0.6rem; transition: all 0.2s ease; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.2);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(239, 68, 68, 0.3)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(239, 68, 68, 0.2)';">
                     <i class="fas fa-lock" style="font-size: 1.1rem;"></i> Close Cash Shift
                 </button>
@@ -854,5 +838,22 @@ function checkShiftOnLoad() {
         }
     })
     .catch(console.error);
+}
+
+function confirmLogout(event) {
+    event.preventDefault();
+    Swal.fire({
+        title: 'Are you sure?',
+        text: 'You will be logged out of the POS system.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        confirmButtonText: 'Yes, Logout',
+        cancelButtonText: 'Cancel'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = '../logout.php';
+        }
+    });
 }
 </script>

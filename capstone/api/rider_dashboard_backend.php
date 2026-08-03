@@ -4,14 +4,15 @@
  * Handles: confirm_delivery (COD + details), get_collections, activity logging
  * Access: Delivery Rider (from roles table)
  */
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/mailer.php';
-require_once '../includes/sms.php';
-require_once '../includes/module_access.php';
-require_once '../includes/csrf.php';
-require_once '../includes/delivery_cancellation_helper.php';
-require_once '../includes/rider_availability_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/mailer.php';
+require_once __DIR__ . '/../includes/sms.php';
+require_once __DIR__ . '/../includes/module_access.php';
+require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/delivery_cancellation_helper.php';
+require_once __DIR__ . '/../includes/rider_availability_helper.php';
+require_once __DIR__ . '/../includes/delivery_transfer_helper.php';
 
 require_once __DIR__ . '/../includes/roles_helper.php';
 require_once __DIR__ . '/../includes/order_status_helper.php';
@@ -39,7 +40,7 @@ $action = $_POST['action'] ?? $_GET['action'] ?? '';
 
 // CSRF Protection for state-changing POST actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $state_changing_actions = ['confirm_delivery', 'send_on_the_way_email', 'send_on_the_way_sms', 'cancel_delivery', 'acknowledge_return_to_store', 'rider_set_available'];
+    $state_changing_actions = ['confirm_delivery', 'send_on_the_way_email', 'send_on_the_way_sms', 'cancel_delivery', 'report_vehicle_issue', 'acknowledge_return_to_store', 'rider_set_available'];
     if (in_array($action, $state_changing_actions, true)) {
         if (!validateCsrfToken(false)) {
             http_response_code(403);
@@ -68,6 +69,13 @@ try {
                 break;
             }
             cancelDelivery($conn, $user_id, $order_status_col);
+            break;
+        case 'report_vehicle_issue':
+            if (!isModuleAllowedForUser($conn, $user_id, 'rider_delivery_queue', true)) {
+                echo json_encode(['success' => false, 'message' => 'Delivery queue access is restricted.']);
+                break;
+            }
+            reportVehicleIssue($conn, $user_id, $order_status_col);
             break;
         case 'acknowledge_return_to_store':
             if (!isModuleAllowedForUser($conn, $user_id, 'rider_delivery_queue', true)) {
@@ -366,6 +374,11 @@ function cancelDelivery($conn, $user_id, $order_status_col) {
         return;
     }
 
+    if ($reason === 'Vehicle issue' && $remarks === '') {
+        echo json_encode(['success' => false, 'message' => 'Please describe the vehicle issue before reporting.']);
+        return;
+    }
+
     $check = $conn->prepare("SELECT Delivery_ID, Order_ID, delivery_status FROM delivery WHERE Delivery_ID = ?");
     $check->execute([$delivery_id]);
     $delivery = $check->fetch(PDO::FETCH_ASSOC);
@@ -420,23 +433,31 @@ function cancelDelivery($conn, $user_id, $order_status_col) {
             $availStmt->execute([$user_id]);
 
             // Also flag all other active deliveries for this rider as Returning + Vehicle issue
-            $other_stmt = $conn->prepare("SELECT Delivery_ID, Order_ID FROM delivery 
-                WHERE Delivery_ID != ? AND assigned_rider_id = ? 
-                AND delivery_status NOT IN ('Completed', 'Cancelled', 'Delivered')");
-            $other_stmt->execute([$delivery_id, $user_id]);
             $other_count = 0;
-            while ($other = $other_stmt->fetch(PDO::FETCH_ASSOC)) {
-                $other_dlv_id = (int)$other['Delivery_ID'];
-                $other_ord_id = (int)$other['Order_ID'];
-                $other_count++;
-                $conn->prepare("UPDATE delivery SET delivery_status = 'Returning', cancellation_reason = 'Vehicle issue', cancellation_remarks = CONCAT('Auto-flagged due to vehicle issue on Delivery #', ?), updated_at = NOW() WHERE Delivery_ID = ?")
-                    ->execute([$delivery_id, $other_dlv_id]);
-                if ($other_ord_id > 0) {
-                    $new_order_status = getValidOrderStatus($conn, 'Confirmed', ['Confirmed', 'Requested']);
-                    $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")
-                        ->execute([$new_order_status, $other_ord_id]);
+            $otherParams = [$delivery_id];
+            $otherOwnership = riderBuildOwnershipCondition($conn, 'd', $user_id, $otherParams);
+            if ($otherOwnership !== '0 = 1') {
+                $excluded_ph = deliveryTransferExcludedSqlPlaceholders();
+                $excluded_params = deliveryTransferExcludedSqlParams();
+                $other_stmt = $conn->prepare("SELECT d.Delivery_ID, d.Order_ID FROM delivery d
+                    WHERE d.Delivery_ID != ?
+                      AND {$otherOwnership}
+                      AND d.delivery_status NOT IN ({$excluded_ph})");
+                $other_stmt->execute(array_merge($otherParams, $excluded_params));
+                while ($other = $other_stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $other_dlv_id = (int)$other['Delivery_ID'];
+                    $other_ord_id = (int)$other['Order_ID'];
+                    $other_count++;
+                    $other_remarks = "Auto-flagged due to vehicle issue on Delivery #{$delivery_id} - {$remarks}";
+                    $conn->prepare("UPDATE delivery SET delivery_status = 'Returning', cancellation_reason = 'Vehicle issue', cancellation_remarks = ?, updated_at = NOW() WHERE Delivery_ID = ?")
+                        ->execute([$other_remarks, $other_dlv_id]);
+                    if ($other_ord_id > 0) {
+                        $new_order_status = getValidOrderStatus($conn, 'Confirmed', ['Confirmed', 'Requested']);
+                        $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")
+                            ->execute([$new_order_status, $other_ord_id]);
+                    }
+                    logActivity($conn, $user_id, "Auto-flagged Delivery #{$other_dlv_id}, Order #{$other_ord_id} as Returning due to Vehicle issue reported on Delivery #{$delivery_id}.");
                 }
-                logActivity($conn, $user_id, "Auto-flagged Delivery #{$other_dlv_id}, Order #{$other_ord_id} as Returning due to Vehicle issue reported on Delivery #{$delivery_id}.");
             }
 
             // Notify all manager/owner users so they can reassign
@@ -472,12 +493,144 @@ function cancelDelivery($conn, $user_id, $order_status_col) {
         $responseMsg = ($reason === 'Vehicle issue')
             ? 'Vehicle issue reported. Manager has been notified and will assign another rider to continue the delivery.'
             : 'Delivery marked as Returning. Manager can now contact the customer and reschedule or cancel the order.';
-        echo json_encode(['success' => true, 'message' => $responseMsg]);
+        if ($reason === 'Vehicle issue' && $other_count > 0) {
+            $responseMsg .= ' ' . $other_count . ' other active delivery/deliveries were also flagged.';
+        }
+        echo json_encode([
+            'success' => true,
+            'message' => $responseMsg,
+            'other_flagged_count' => ($reason === 'Vehicle issue') ? $other_count : 0,
+        ]);
 
     } catch (Exception $e) {
         if ($conn->inTransaction()) $conn->rollBack();
         error_log("Rider cancel delivery error: " . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Failed to cancel delivery: ' . $e->getMessage()]);
+    }
+}
+
+/**
+ * Report vehicle breakdown for all active deliveries (Scheduled / In Transit).
+ * Delivered, remitted, completed, and cancelled orders are not affected.
+ */
+function reportVehicleIssue($conn, $user_id, $order_status_col) {
+    $remarks = trim($_POST['remarks'] ?? '');
+
+    if ($remarks === '') {
+        echo json_encode(['success' => false, 'message' => 'Please describe the vehicle issue (required).']);
+        return;
+    }
+
+    if (strlen($remarks) > 500) {
+        echo json_encode(['success' => false, 'message' => 'Vehicle issue details must be 500 characters or less.']);
+        return;
+    }
+
+    $ownershipParams = [];
+    $ownership = riderBuildOwnershipCondition($conn, 'd', $user_id, $ownershipParams);
+    if ($ownership === '0 = 1') {
+        echo json_encode(['success' => false, 'message' => 'Vehicle issue reporting is not available for your account setup.']);
+        return;
+    }
+
+    $stmt = $conn->prepare("SELECT Delivery_ID, Order_ID, delivery_status
+        FROM delivery d
+        WHERE {$ownership}
+          AND d.delivery_status IN ('Scheduled', 'In Transit')
+        ORDER BY Delivery_ID");
+    $stmt->execute($ownershipParams);
+    $active = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (empty($active)) {
+        $pendingParams = [$user_id];
+        $pendingOwnership = riderBuildOwnershipCondition($conn, 'd', $user_id, $pendingParams);
+        $pending_vi = $conn->prepare("SELECT COUNT(*) FROM delivery d
+            WHERE {$pendingOwnership}
+              AND d.delivery_status = 'Returning'
+              AND d.cancellation_reason = 'Vehicle issue'");
+        $pending_vi->execute($pendingParams);
+        $pending_count = (int)$pending_vi->fetchColumn();
+        if ($pending_count > 0) {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Vehicle issue was already reported. Wait for the manager to reassign your deliveries.',
+            ]);
+            return;
+        }
+        echo json_encode(['success' => false, 'message' => 'No active deliveries to flag. Delivered and remitted orders stay with you for cashier remittance.']);
+        return;
+    }
+
+    $conn->beginTransaction();
+    try {
+        $confirmed_order_status = getValidOrderStatus($conn, 'Confirmed', ['Confirmed', 'Requested']);
+        $flagged_count = 0;
+        $anchor_id = (int)$active[0]['Delivery_ID'];
+        $detailReasonBase = 'Vehicle issue - ' . $remarks;
+
+        foreach ($active as $row) {
+            $delivery_id = (int)$row['Delivery_ID'];
+            $order_id = (int)$row['Order_ID'];
+            $row_remarks = ($delivery_id === $anchor_id)
+                ? $remarks
+                : "Auto-flagged due to vehicle issue on Delivery #{$anchor_id} - {$remarks}";
+
+            $conn->prepare("UPDATE delivery SET delivery_status = 'Returning', cancellation_reason = 'Vehicle issue', cancellation_remarks = ?, updated_at = NOW() WHERE Delivery_ID = ?")
+                ->execute([$row_remarks, $delivery_id]);
+
+            $detailReasonNote = 'Vehicle issue - ' . ($delivery_id === $anchor_id ? $remarks : "linked to #{$anchor_id}: {$remarks}");
+            $conn->prepare("UPDATE delivery_detail SET remarks = CONCAT(COALESCE(remarks, ''), CASE WHEN COALESCE(remarks, '') = '' THEN '' ELSE ' ' END, '[Returning: ', ?, ']'), updated_at = NOW() WHERE Delivery_ID = ?")
+                ->execute([$detailReasonNote, $delivery_id]);
+
+            if ($order_id > 0) {
+                $conn->prepare("UPDATE orders SET {$order_status_col} = ? WHERE Order_ID = ?")
+                    ->execute([$confirmed_order_status, $order_id]);
+            }
+
+            logActivity($conn, $user_id, "Vehicle issue reported on Delivery #{$delivery_id}, Order #{$order_id}. {$detailReasonBase}");
+            $flagged_count++;
+        }
+
+        ensureRiderWorkflowSchema($conn);
+        $conn->prepare("INSERT INTO rider_settings (User_ID, availability_status, last_set_at)
+                        VALUES (?, 'Off Duty', NOW())
+                        ON DUPLICATE KEY UPDATE availability_status = 'Off Duty', last_set_at = NOW()")
+            ->execute([$user_id]);
+
+        require_once __DIR__ . '/../includes/roles_helper.php';
+        $managerRoleIds = getDashboardRoleIds($conn);
+        $riderName = trim($_SESSION['full_name'] ?? $_SESSION['user_name'] ?? 'Rider');
+        $notifMsg = "{$riderName} reported a vehicle issue. {$flagged_count} active delivery/deliveries flagged for manager transfer.";
+        if (!empty($managerRoleIds)) {
+            $placeholders = implode(',', array_fill(0, count($managerRoleIds), '?'));
+            $userStmt = $conn->prepare("SELECT User_ID FROM user WHERE Role_ID IN ($placeholders) AND is_active = 1");
+            $userStmt->execute($managerRoleIds);
+            $managerUserIds = $userStmt->fetchAll(PDO::FETCH_COLUMN);
+            if (!empty($managerUserIds)) {
+                $notifStmt = $conn->prepare("INSERT INTO activity_logs (User_ID, Activity_Type, Action_Details, Reference_ID, Log_Time) VALUES (?, 'NOTIFICATION', ?, ?, CURRENT_TIMESTAMP)");
+                foreach ($managerUserIds as $uid) {
+                    $notifStmt->execute([(int)$uid, $notifMsg, $anchor_id]);
+                }
+            }
+        }
+
+        $conn->commit();
+
+        $responseMsg = 'Vehicle issue reported. You are now Off Duty. The manager will reassign your active deliveries.';
+        if ($flagged_count > 1) {
+            $responseMsg .= " {$flagged_count} deliveries were flagged.";
+        }
+        echo json_encode([
+            'success' => true,
+            'message' => $responseMsg,
+            'flagged_count' => $flagged_count,
+        ]);
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) {
+            $conn->rollBack();
+        }
+        error_log('Rider report vehicle issue error: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Failed to report vehicle issue: ' . $e->getMessage()]);
     }
 }
 

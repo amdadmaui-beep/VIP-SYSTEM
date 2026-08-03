@@ -5,12 +5,12 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/roles_helper.php';
-require_once '../includes/csrf.php';
-require_once '../includes/logger.php';
-require_once '../includes/preparation_tasks_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/preparation_tasks_helper.php';
 
 $inventoryStaffIds = getInventoryStaffRoleIds($conn);
 requireRole(empty($inventoryStaffIds) ? [0] : $inventoryStaffIds);

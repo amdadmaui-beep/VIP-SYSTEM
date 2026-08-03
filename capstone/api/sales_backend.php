@@ -10,17 +10,17 @@
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/logger.php';
-require_once '../includes/module_access.php';
-require_once '../includes/rider_availability_helper.php';
-require_once '../includes/cash_session_helper.php';
-require_once '../includes/stock_reservation_helper.php';
-require_once '../includes/csrf.php'; // CSRF Protection - Security Fix
-require_once '../includes/rate_limiter.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/logger.php';
+require_once __DIR__ . '/../includes/module_access.php';
+require_once __DIR__ . '/../includes/rider_availability_helper.php';
+require_once __DIR__ . '/../includes/cash_session_helper.php';
+require_once __DIR__ . '/../includes/stock_reservation_helper.php';
+require_once __DIR__ . '/../includes/csrf.php'; // CSRF Protection - Security Fix
+require_once __DIR__ . '/../includes/rate_limiter.php';
 require_once __DIR__ . '/../realtime/publish_event.php';
-require_once '../includes/mailer.php';
+require_once __DIR__ . '/../includes/mailer.php';
 
 // Accessible to Owner (1), Cashier (2), and Manager (4)
 requireRole([1, 2, 3]);
@@ -558,6 +558,7 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
 
         // Post to AR
         $post_to_ar = isset($_POST['post_to_ar']) && ($_POST['post_to_ar'] === 'on' || $_POST['post_to_ar'] === '1' || $_POST['post_to_ar'] === true);
+        $created_ar_context = null;
         if ($post_to_ar) {
             $dup_check = $conn->prepare("SELECT AR_ID FROM account_receivable WHERE Sale_ID = ? LIMIT 1");
             $dup_check->execute([$sale_id]);
@@ -596,27 +597,15 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
                 $outstanding_stmt->execute([$customer_id]);
                 $total_outstanding = floatval($outstanding_stmt->fetchColumn() ?? 0);
                 
-                // Combined enforcement: zero-balance + credit cap
-                // Zero-balance rule: any existing unpaid balance blocks new AR
-                if ($total_outstanding > 0) {
-                    logActivity('SALE', "Zero-balance rule blocked AR for customer {$customer_name} (ID: {$customer_id}). " .
-                        "Outstanding: {$total_outstanding}, Attempted AR: {$amount_due}", $customer_id);
-                    
-                    throw new Exception(
-                        "Customer has an outstanding balance of \u{20B1}" . number_format($total_outstanding, 2) . ".\n" .
-                        "Please settle payment before creating a new AR record.\n" .
-                        "This Sale Amount Due: \u{20B1}" . number_format($amount_due, 2)
-                    );
-                }
-                
-                // Credit cap rule: new AR amount cannot exceed credit limit
-                if ($credit_limit > 0 && $amount_due > $credit_limit) {
+                // Combined credit check: allow AR as long as total outstanding + new AR doesn't exceed credit limit
+                $total_after_ar = $total_outstanding + $amount_due;
+                if ($credit_limit > 0 && $total_after_ar > $credit_limit) {
                     logActivity('SALE', "Credit cap blocked AR for customer {$customer_name} (ID: {$customer_id}). " .
-                        "Limit: {$credit_limit}, Attempted AR: {$amount_due}", $customer_id);
+                        "Outstanding: {$total_outstanding}, Limit: {$credit_limit}, Attempted AR: {$amount_due}", $customer_id);
                     
                     throw new Exception(
-                        "Amount due (\u{20B1}" . number_format($amount_due, 2) . ") exceeds credit limit (\u{20B1}" . number_format($credit_limit, 2) . ").\n" .
-                        "Reduce the amount due to stay within the credit limit."
+                        "Adding this AR (\u{20B1}" . number_format($amount_due, 2) . ") would bring the total to \u{20B1}" . number_format($total_after_ar, 2) . ", exceeding the credit limit of \u{20B1}" . number_format($credit_limit, 2) . ".\n" .
+                        "Reduce the AR amount so that total outstanding (\u{20B1}" . number_format($total_outstanding, 2) . ") + new AR stays within the credit limit."
                     );
                 }
                 
@@ -624,7 +613,7 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
                     (Sale_ID, Customer_ID, invoice_date, invoice_amount, opening_balance, amount_due, due_date, status)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
                 $ar_stmt->execute([$sale_id, $customer_id, date('Y-m-d'), $invoice_amount, $amount_due, $amount_due, $due_date, 'Open']);
-                $ar_id = $conn->lastInsertId();
+                $ar_id = (int)$conn->lastInsertId();
 
                 if ($amount_paid > 0) {
                     $pay_stmt = $conn->prepare("INSERT INTO ar_payment (payment_date, amount_paid, remaining_balance, collected_by) VALUES (?, ?, ?, ?)");
@@ -634,6 +623,15 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
                     $link_stmt = $conn->prepare("INSERT INTO singil (AR_ID, Payment_ID) VALUES (?, ?)");
                     $link_stmt->execute([$ar_id, $payment_id]);
                 }
+
+                $created_ar_context = [
+                    'ar_id' => $ar_id,
+                    'invoice_amount' => $invoice_amount,
+                    'amount_due' => $amount_due,
+                    'due_date' => $due_date,
+                    'amount_paid' => $amount_paid,
+                    'customer_id' => $customer_id,
+                ];
             }
         }
 
@@ -728,6 +726,33 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
 
                 // Send email receipt asynchronously/safely without blocking response
                 sendDeliverySaleReceiptEmail($to_email, $to_name, $sale_details, $email_items);
+
+                if ($created_ar_context && ($created_ar_context['amount_due'] ?? 0) > 0) {
+                    sendARCreatedEmail(
+                        $to_email,
+                        $to_name,
+                        (int)$created_ar_context['ar_id'],
+                        (float)$created_ar_context['invoice_amount'],
+                        (float)$created_ar_context['amount_due'],
+                        (string)$created_ar_context['due_date'],
+                        (int)$sale_id
+                    );
+                }
+
+                if ($created_ar_context && ($created_ar_context['amount_paid'] ?? 0) > 0) {
+                    $ctx = $created_ar_context;
+                    $remaining = (float)$ctx['amount_due'];
+                    $paid = (float)$ctx['amount_paid'];
+                    sendARPaymentEmail(
+                        $to_email,
+                        $to_name,
+                        (int)$ctx['ar_id'],
+                        $paid,
+                        $remaining,
+                        $remaining <= 0,
+                        (float)$ctx['invoice_amount']
+                    );
+                }
             } catch (Throwable $e) {
                 // Log failure to prevent breaking the successful checkout
                 logActivity('SYSTEM_ERROR', "Failed to send receipt email for Sale #$sale_id: " . $e->getMessage(), $sale_id);

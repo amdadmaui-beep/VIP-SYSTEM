@@ -1,5 +1,5 @@
     <?php if ($can_rider_history): ?>
-        <div id="tab-history" class="tab-content staggered-group" style="display:none;">
+        <div id="tab-history" class="tab-content staggered-group" style="display:<?= $activeTab === 'history' ? 'block' : 'none' ?>">
         <div class="bg-white rounded-[24px] p-6 shadow-xl border border-slate-100 relative overflow-hidden animate-fade-in-up">
             <!-- Background gradient effect for history -->
             <div class="absolute -top-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>

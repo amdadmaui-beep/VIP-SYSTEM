@@ -161,6 +161,40 @@ if ($arTableCheck && $arTableCheck->rowCount() > 0) {
     }
 }
 
+// Collectible AR balances per customer (all outstanding, not just overdue)
+$collectibleARList = [];
+$collectibleTotal = 0;
+$collectibleCustomerCount = 0;
+if ($arTableCheck && $arTableCheck->rowCount() > 0) {
+    $collectibleQuery = "SELECT 
+                            ar.customer_id,
+                            COALESCE(c.customer_name, CONCAT('Customer #', ar.customer_id)) as customer_name,
+                            COALESCE(c.phone_number, '') as phone_number,
+                            SUM(ar.amount_due) as total_collectible,
+                            COUNT(ar.AR_ID) as invoice_count,
+                            MIN(ar.due_date) as earliest_due,
+                            MAX(ar.due_date) as latest_due,
+                            SUM(CASE WHEN COALESCE(DATEDIFF(CURDATE(), ar.due_date), 0) <= 0 THEN ar.amount_due ELSE 0 END) as current_amount,
+                            SUM(CASE WHEN COALESCE(DATEDIFF(CURDATE(), ar.due_date), 0) BETWEEN 1 AND 30 THEN ar.amount_due ELSE 0 END) as bucket_1_30,
+                            SUM(CASE WHEN COALESCE(DATEDIFF(CURDATE(), ar.due_date), 0) BETWEEN 31 AND 60 THEN ar.amount_due ELSE 0 END) as bucket_31_60,
+                            SUM(CASE WHEN COALESCE(DATEDIFF(CURDATE(), ar.due_date), 0) BETWEEN 61 AND 90 THEN ar.amount_due ELSE 0 END) as bucket_61_90,
+                            SUM(CASE WHEN COALESCE(DATEDIFF(CURDATE(), ar.due_date), 0) > 90 THEN ar.amount_due ELSE 0 END) as bucket_90_plus
+                        FROM account_receivable ar
+                        LEFT JOIN customers c ON ar.customer_id = c.Customer_ID
+                        WHERE ar.status NOT IN ('Paid', 'Closed') AND ar.amount_due > 0
+                        GROUP BY ar.customer_id
+                        ORDER BY total_collectible DESC
+                        LIMIT 20";
+    $collectibleResult = $conn->query($collectibleQuery);
+    if ($collectibleResult) {
+        while ($row = $collectibleResult->fetch(PDO::FETCH_ASSOC)) {
+            $collectibleARList[] = $row;
+        }
+    }
+    $collectibleCustomerCount = count($collectibleARList);
+    $collectibleTotal = array_sum(array_map(function($r) { return floatval($r['total_collectible'] ?? 0); }, $collectibleARList));
+}
+
 // Pending Orders
 $pendingOrders = 0;
 if ($hasOrdersTable) {
@@ -190,6 +224,7 @@ if ($hasOrdersTable) {
 
 // Low Stocks count (real DB-backed)
 $lowStocksCount = 0;
+$lowStockProducts = [];
 if ($hasStockinTable && $hasProductsTable) {
     $productCols = [];
     $prodColsRes = $conn->query("SHOW COLUMNS FROM products");
@@ -215,6 +250,49 @@ if ($hasStockinTable && $hasProductsTable) {
     $lowStockResult = $conn->query($lowStockQuery);
     if ($lowStockResult && $row = $lowStockResult->fetch(PDO::FETCH_ASSOC)) {
         $lowStocksCount = intval($row['cnt']);
+    }
+
+    // Fetch detailed low-stock products for the table
+    $lowStockDetailQuery = "SELECT p.Product_ID, p.product_name,
+                                   COALESCE((
+                                       SELECT quantity FROM stockin_inventory
+                                       WHERE Product_ID = p.Product_ID
+                                       ORDER BY COALESCE(updated_at, created_at, date_in) DESC, Inventory_ID DESC
+                                       LIMIT 1
+                                   ), 0) AS current_qty,
+                                   " . ($hasSafetyStock ? "COALESCE(p.safety_stock, 50)" : "50") . " AS replenishment_level,
+                                   COALESCE((
+                                       SELECT storage_limit FROM stockin_inventory
+                                       WHERE Product_ID = p.Product_ID
+                                       ORDER BY COALESCE(updated_at, created_at, date_in) DESC, Inventory_ID DESC
+                                       LIMIT 1
+                                   ), 100) AS storage_limit
+                            FROM products p
+                            WHERE p.is_discontinued = 0
+                            HAVING current_qty <= replenishment_level
+                            ORDER BY current_qty ASC";
+    $lowStockDetailResult = $conn->query($lowStockDetailQuery);
+    if ($lowStockDetailResult) {
+        while ($detailRow = $lowStockDetailResult->fetch(PDO::FETCH_ASSOC)) {
+            $lowStockProducts[] = $detailRow;
+        }
+    }
+}
+
+// Low stock email notification (once per day via session throttle)
+if ($hasStockinTable && $hasProductsTable && $lowStocksCount > 0) {
+    $today = date('Y-m-d');
+    $lastNotified = $_SESSION['low_stock_notified_date'] ?? '';
+    if ($lastNotified !== $today) {
+        try {
+            require_once __DIR__ . '/../../includes/inventory_staff_chrome.php';
+            $notifyResult = notifyLowStockToStaff($conn);
+            if (!empty($notifyResult['sent'])) {
+                $_SESSION['low_stock_notified_date'] = $today;
+            }
+        } catch (Throwable $e) {
+            // Email failure should not break dashboard
+        }
     }
 }
 

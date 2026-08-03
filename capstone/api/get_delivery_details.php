@@ -9,7 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require_once __DIR__ . '/../includes/auth.php';
 
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/db.php';
 try {
 
 $delivery_id = intval($_GET['delivery_id'] ?? 0);

@@ -105,14 +105,15 @@ if (riderWorkflowHasColumn($conn, 'delivery', 'assigned_rider_id')) {
 }
 
 // Fetch orders with filters
-$status_filter = $_GET['status'] ?? '';
+$status_filter = $_GET['status'] ?? 'active';
 $status_where = '';
 
 // Get order statistics
-$order_stats = ['total' => 0, 'pending' => 0, 'scheduled' => 0, 'completed' => 0, 'cancelled' => 0];
+$order_stats = ['total' => 0, 'active' => 0, 'pending' => 0, 'scheduled' => 0, 'completed' => 0, 'cancelled' => 0];
 try {
     $stats_query = "SELECT 
         COUNT(*) as total,
+        SUM(CASE WHEN LOWER(o.{$order_status_col}) NOT IN ('completed','cancelled','delivered (pending cash turnover)') THEN 1 ELSE 0 END) as active,
         SUM(CASE WHEN LOWER(o.{$order_status_col}) IN ('pending', 'requested', 'confirmed') THEN 1 ELSE 0 END) as pending,
         SUM(CASE WHEN o.{$order_status_col} = 'Scheduled for Delivery' THEN 1 ELSE 0 END) as scheduled,
         SUM(CASE WHEN o.{$order_status_col} = 'Completed' THEN 1 ELSE 0 END) as completed,
@@ -153,7 +154,9 @@ $allowed_statuses = [
 ];
 
 if (!empty($status_filter) && $status_filter !== 'all') {
-    if ($status_filter === 'pending') {
+    if ($status_filter === 'active') {
+        $status_where = "WHERE LOWER(o.{$order_status_col}) NOT IN ('completed','cancelled','delivered (pending cash turnover)')";
+    } elseif ($status_filter === 'pending') {
         // Pending = Requested + pending + legacy confirmed rows
         $status_where = "WHERE LOWER(o.{$order_status_col}) IN ('pending', 'requested', 'confirmed')";
     } elseif (strtolower($status_filter) === 'cancelled') {
@@ -175,8 +178,8 @@ if (!empty($status_filter) && $status_filter !== 'all') {
         $status_where = "WHERE $deliveryDateCol IS NOT NULL AND $deliveryDateCol BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY) AND $statusExcl";
     }
 } else {
-    // By default, exclude Delivered/Out for Delivery from orders view if not specifically asked
-    $status_where = "WHERE o.{$order_status_col} NOT IN ('Out for Delivery', 'Delivered', 'Delivered (Pending Cash Turnover)')";
+    // All orders (when ?status=all or no filter matches)
+    $status_where = "";
 }
 
 // Search by Order ID (overrides status filter so any order can be found)
@@ -186,13 +189,21 @@ if ($search_id > 0) {
     $status_params = [$search_id];
 }
 
+// Text search (order # or customer name/phone) - overrides status filter like search_id
+$search_q = trim((string)($_GET['q'] ?? ''));
+if ($search_q !== '' && $search_id <= 0) {
+    $like = '%' . $search_q . '%';
+    $status_where = "WHERE (o.Order_ID = ? OR o.customer_name_snapshot LIKE ? OR c.customer_name LIKE ? OR o.customer_phone_snapshot LIKE ?)";
+    $status_params = [is_numeric($search_q) ? (int)$search_q : 0, $like, $like, $like];
+}
+
 // Pagination parameters (Performance Fix)
 $page = max(1, intval($_GET['page'] ?? 1));
 $per_page = min(100, max(1, intval($_GET['per_page'] ?? 20))); // Max 100 per page
 $offset = ($page - 1) * $per_page;
 
 // Get total count for pagination (Performance Fix)
-$count_query = "SELECT COUNT(*) FROM orders o LEFT JOIN delivery d ON o.Order_ID = d.Order_ID $status_where";
+$count_query = "SELECT COUNT(*) FROM orders o LEFT JOIN delivery d ON o.Order_ID = d.Order_ID INNER JOIN customers c ON o.Customer_ID = c.Customer_ID $status_where";
 if (!empty($status_params)) {
     $count_stmt = $conn->prepare($count_query);
     $count_stmt->execute($status_params);
@@ -641,7 +652,16 @@ if (!$orders_result) {
 
         <!-- Order Stats Cards -->
         <div class="stats-grid">
-            <a href="orders.php?status=all" class="stat-card <?php echo empty($status_filter) || $status_filter === 'all' ? 'active' : ''; ?>">
+            <a href="orders.php?status=active" class="stat-card <?php echo $status_filter === 'active' ? 'active' : ''; ?>">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; box-shadow: 0 8px 20px rgba(99,102,241,0.3);">
+                    <i class="fas fa-play-circle"></i>
+                </div>
+                <div class="stat-content">
+                    <h4>Active</h4>
+                    <p><?php echo $order_stats['active'] ?? 0; ?></p>
+                </div>
+            </a>
+            <a href="orders.php?status=all" class="stat-card <?php echo $status_filter === 'all' ? 'active' : ''; ?>">
                 <div class="stat-icon all">
                     <i class="fas fa-shopping-bag"></i>
                 </div>
@@ -730,16 +750,16 @@ if (!$orders_result) {
         </div>
         <?php endif; ?>
 
-        <!-- Search by Order ID -->
+        <!-- Search by Order ID or Customer -->
         <form method="GET" class="orders-search-form">
             <input type="hidden" name="status" value="<?php echo htmlspecialchars($status_filter); ?>">
             <input type="hidden" name="page" value="1">
-            <input type="number" name="search_id" class="orders-search-input" placeholder="Search by Order #..." min="1"
-                   value="<?php echo $search_id > 0 ? $search_id : ''; ?>">
+            <input type="text" name="q" class="orders-search-input" placeholder="Search order #, customer name or phone..."
+                   value="<?php echo $search_q !== '' ? htmlspecialchars($search_q, ENT_QUOTES, 'UTF-8') : ($search_id > 0 ? $search_id : ''); ?>">
             <button type="submit" class="orders-search-btn">
                 <i class="fas fa-search"></i> Search
             </button>
-            <?php if ($search_id > 0): ?>
+            <?php if ($search_q !== '' || $search_id > 0): ?>
                 <a href="?status=<?php echo urlencode($status_filter); ?>" class="orders-search-clear">
                     <i class="fas fa-times"></i> Clear
                 </a>
@@ -1228,6 +1248,7 @@ if (!$orders_result) {
         window.customerHasBalance = false;
         window.customerRemainingBalance = 0;
         window.customerIsOverLimit = false;
+        window.customerAvailableCredit = 0;
         
         if (!customerId) {
             warningDiv.style.display = 'none';
@@ -1241,26 +1262,28 @@ if (!$orders_result) {
             
             if (result.success) {
                 const unpaid = parseFloat(result.data.total_unpaid || 0);
+                const creditLimit = parseFloat(result.data.credit_limit || 0);
                 window.customerRemainingBalance = unpaid;
                 window.customerHasBalance = unpaid > 0;
                 window.customerIsOverLimit = result.data.is_over_limit;
+                window.customerAvailableCredit = parseFloat(result.data.available_credit || 0);
                 
                 if (unpaid > 0) {
                     let msg = `Customer has a remaining balance of ₱${unpaid.toLocaleString(undefined, {minimumFractionDigits: 2})}.`;
                     if (result.data.is_over_limit) {
-                        msg += ` ${result.data.recommendation || 'Credit Limit Exceeded!'}`;
-                        warningDiv.style.backgroundColor = '#fee2e2';
+                        msg += ` Credit limit fully used. Orders allowed but consider Cash-Only terms.`;
+                        warningDiv.style.backgroundColor = '#fef2f2';
                         warningDiv.style.color = '#991b1b';
-                        warningDiv.style.borderColor = '#fca5a5';
-                        submitBtn.disabled = true;
-                        submitBtn.title = "Cannot create credit order: Credit limit exceeded.";
+                        warningDiv.style.borderColor = '#fecaca';
                     } else {
+                        const available = parseFloat(result.data.available_credit || 0);
+                        msg += ` Available credit: ₱${available.toLocaleString(undefined, {minimumFractionDigits: 2})}.`;
                         warningDiv.style.backgroundColor = '#fff7ed';
                         warningDiv.style.color = '#9a3412';
                         warningDiv.style.borderColor = '#fed7aa';
-                        submitBtn.disabled = false;
-                        submitBtn.title = "";
                     }
+                    submitBtn.disabled = false;
+                    submitBtn.title = "";
                     warningMsg.textContent = msg;
                     warningDiv.style.display = 'block';
                 } else {

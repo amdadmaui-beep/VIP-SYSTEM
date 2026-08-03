@@ -210,22 +210,98 @@ function sendARBalanceReminderEmail(string $toEmail, string $toName, int $arId, 
     try {
         $mail->addAddress($toEmail, $toName !== '' ? $toName : $toEmail);
         $mail->Subject = 'Balance Reminder - VIP Ice Plant';
+
         $formattedAmount = number_format($amountDue, 2);
         $safeName = htmlspecialchars($toName ?: 'Customer', ENT_QUOTES, 'UTF-8');
         $safeDueDate = htmlspecialchars($dueDate, ENT_QUOTES, 'UTF-8');
+        $reference = 'AR-' . (int)$arId;
 
-        $mail->Body = '<p>Hello ' . $safeName . ',</p>'
-            . '<p>This is a friendly reminder regarding your outstanding balance with VIP Ice Plant.</p>'
-            . '<p><strong>Reference:</strong> AR-' . (int)$arId . '<br>'
-            . '<strong>Balance Due:</strong> PHP ' . $formattedAmount . '<br>'
-            . '<strong>Due Date:</strong> ' . $safeDueDate . '</p>'
-            . '<p>Please settle your account at your earliest convenience. Thank you.</p>';
+        // Compute days until due or overdue badge
+        $dueTimestamp = strtotime($dueDate);
+        if ($dueTimestamp === false) {
+            $badgeLabel = '';
+            $badgeColor = '#64748b';
+        } else {
+            $daysDiff = (int)((strtotime(date('Y-m-d')) - $dueTimestamp) / 86400);
+            if ($daysDiff > 0) {
+                $badgeLabel = $daysDiff === 1 ? '1 day overdue' : "{$daysDiff} days overdue";
+                $badgeColor = '#dc2626';
+            } elseif ($daysDiff === 0) {
+                $badgeLabel = 'Due today';
+                $badgeColor = '#ea580c';
+            } else {
+                $remaining = abs($daysDiff);
+                $badgeLabel = $remaining === 1 ? 'Due in 1 day' : "Due in {$remaining} days";
+                $badgeColor = '#d97706';
+            }
+        }
+
+        // Optional logo
+        $logoPath = realpath(__DIR__ . '/../assets/img/VIP-LOGS - Copy.jpg');
+        $hasLogo = ($logoPath && file_exists($logoPath));
+        if ($hasLogo) {
+            $mail->addEmbeddedImage($logoPath, 'logo');
+        }
+
+        $mail->Body = '
+<div style="background-color:#f8fafc;padding:36px 10px;font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,Helvetica,Arial,sans-serif;">
+  <table align="center" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <tr>
+      <td style="padding:28px 32px;background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#ffffff;">
+        <table cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td>
+              ' . ($hasLogo ? '<img src="cid:logo" alt="VIP Ice Plant" width="100" style="display:block;border:0;" />' : '<span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.88;">VIP Ice Plant</span>') . '
+            </td>
+            <td style="text-align:right;">
+              <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.88;">Balance Reminder</div>
+              <h2 style="margin:6px 0 0;font-size:22px;">' . $reference . '</h2>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:28px 32px;color:#334155;">
+        <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">Hello <strong>' . $safeName . '</strong>,</p>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;">This is a friendly reminder regarding your outstanding balance with VIP Ice Plant. Please review the details below.</p>
+        <table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;">Reference</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;">' . $reference . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Balance Due</td>
+            <td style="padding:12px 16px;text-align:right;color:#b45309;font-weight:800;border-top:1px solid #e2e8f0;">PHP ' . $formattedAmount . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Due Date</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">' . $safeDueDate . '</td>
+          </tr>
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Status</td>
+            <td style="padding:12px 16px;text-align:right;border-top:1px solid #e2e8f0;">
+              <span style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;color:#ffffff;background-color:' . $badgeColor . ';">' . $badgeLabel . '</span>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:20px 0 0;font-size:14px;line-height:1.6;color:#64748b;">Please settle your account at your earliest convenience. If you have any questions, please contact us using the reference number above.</p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:20px 32px;text-align:center;font-size:12px;color:#94a3b8;border-top:1px solid #e2e8f0;">
+        &copy; ' . date('Y') . ' VIP Ice Plant. All rights reserved.
+      </td>
+    </tr>
+  </table>
+</div>';
 
         $mail->AltBody = "Hello " . ($toName ?: 'Customer')
-            . ",\n\nThis is a reminder for your outstanding balance."
-            . "\nReference: AR-" . (int)$arId
+            . ",\n\nThis is a friendly reminder regarding your outstanding balance with VIP Ice Plant."
+            . "\n\nReference: " . $reference
             . "\nBalance Due: PHP " . $formattedAmount
             . "\nDue Date: " . $dueDate
+            . ($badgeLabel !== '' ? "\nStatus: " . $badgeLabel : '')
             . "\n\nPlease settle your account at your earliest convenience. Thank you.";
 
         $mail->send();
@@ -304,6 +380,104 @@ function sendARCreatedEmail(string $toEmail, string $toName, int $arId, float $i
         return ['ok' => true, 'message' => 'AR notice email sent successfully.'];
     } catch (Exception $e) {
         return ['ok' => false, 'message' => 'Failed to send AR notice email: ' . (string)$mail->ErrorInfo];
+    }
+}
+
+/**
+ * Notify customer after an AR payment (full or partial).
+ */
+function sendARPaymentEmail(
+    string $toEmail,
+    string $toName,
+    int $arId,
+    float $amountPaid,
+    float $remainingBalance,
+    bool $fullyPaid,
+    float $invoiceAmount = 0,
+    ?string $newDueDate = null
+): array {
+    $setup = createConfiguredMailer();
+    if (!$setup['ok']) {
+        return $setup;
+    }
+    $mail = $setup['mail'];
+
+    try {
+        $mail->addAddress($toEmail, $toName !== '' ? $toName : $toEmail);
+        $reference = 'AR-' . (int)$arId;
+        $safeName = htmlspecialchars($toName ?: 'Customer', ENT_QUOTES, 'UTF-8');
+        $mail->Subject = $fullyPaid
+            ? 'AR Fully Paid - VIP Ice Plant'
+            : 'AR Payment Received - VIP Ice Plant';
+
+        if ($fullyPaid) {
+            $lead = 'Your account receivable has been fully paid. Thank you for settling your balance with VIP Ice Plant.';
+            $summaryLine = '<strong>Amount paid:</strong> PHP ' . number_format($amountPaid, 2);
+        } else {
+            $lead = 'We received your payment toward your account receivable with VIP Ice Plant.';
+            $summaryLine = '<strong>Amount paid:</strong> PHP ' . number_format($amountPaid, 2)
+                . '<br><strong>Remaining balance:</strong> PHP ' . number_format(max(0, $remainingBalance), 2);
+            if ($newDueDate !== null && $newDueDate !== '') {
+                $summaryLine .= '<br><strong>New due date:</strong> ' . htmlspecialchars($newDueDate, ENT_QUOTES, 'UTF-8');
+            }
+        }
+
+        $invoiceRow = '';
+        if ($invoiceAmount > 0) {
+            $invoiceRow = '<tr>'
+                . '<td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Invoice Amount</td>'
+                . '<td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">PHP '
+                . number_format($invoiceAmount, 2) . '</td></tr>';
+        }
+
+        $mail->Body = '
+<div style="background-color:#f8fafc;padding:36px 10px;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+  <table align="center" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+    <tr>
+      <td style="padding:28px 32px;background:linear-gradient(135deg,#059669,#047857);color:#ffffff;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;opacity:.88;">Payment Confirmation</div>
+        <h2 style="margin:6px 0 0;font-size:22px;">Reference ' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') . '</h2>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:28px 32px;color:#334155;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;">Hello <strong>' . $safeName . '</strong>,</p>
+        <p style="margin:0 0 18px;font-size:15px;line-height:1.6;">' . $lead . '</p>
+        <table cellpadding="0" cellspacing="0" width="100%" style="border-collapse:collapse;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;">AR Reference</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;">' . htmlspecialchars($reference, ENT_QUOTES, 'UTF-8') . '</td>
+          </tr>
+          ' . $invoiceRow . '
+          <tr>
+            <td style="padding:12px 16px;color:#64748b;font-size:13px;border-top:1px solid #e2e8f0;">Payment Summary</td>
+            <td style="padding:12px 16px;text-align:right;color:#0f172a;font-weight:700;border-top:1px solid #e2e8f0;">' . $summaryLine . '</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</div>';
+
+        if ($fullyPaid) {
+            $mail->AltBody = "Hello " . ($toName ?: 'Customer')
+                . ",\n\nYour account receivable " . $reference . " is fully paid."
+                . "\nAmount paid: PHP " . number_format($amountPaid, 2)
+                . "\n\nThank you for your payment.";
+        } else {
+            $mail->AltBody = "Hello " . ($toName ?: 'Customer')
+                . ",\n\nWe received your payment for " . $reference . "."
+                . "\nAmount paid: PHP " . number_format($amountPaid, 2)
+                . "\nRemaining balance: PHP " . number_format(max(0, $remainingBalance), 2);
+            if ($newDueDate !== null && $newDueDate !== '') {
+                $mail->AltBody .= "\nNew due date: " . $newDueDate;
+            }
+        }
+
+        $mail->send();
+        return ['ok' => true, 'message' => 'AR payment email sent successfully.'];
+    } catch (Exception $e) {
+        return ['ok' => false, 'message' => 'Failed to send AR payment email: ' . (string)$mail->ErrorInfo];
     }
 }
 
@@ -534,5 +708,97 @@ function sendDeliverySaleReceiptEmail(string $toEmail, string $toName, array $sa
         return ['ok' => true, 'message' => 'Receipt email sent successfully.'];
     } catch (Exception $e) {
         return ['ok' => false, 'message' => 'Failed to send receipt email: ' . (string)$mail->ErrorInfo];
+    }
+}
+
+/**
+ * Send low stock alert email to managers and inventory staff.
+ *
+ * @param array $recipients Array of ['email' => ..., 'full_name' => ...]
+ * @param array $lowProducts Array of ['product_name' => ..., 'current_quantity' => ..., 'safety_stock' => ..., 'storage_limit' => ...]
+ * @return array ['ok' => bool, 'message' => string, 'sent_to' => int]
+ */
+function sendLowStockAlertEmail(array $recipients, array $lowProducts): array
+{
+    $setup = createConfiguredMailer();
+    if (!$setup['ok']) {
+        return ['ok' => false, 'message' => $setup['message'], 'sent_to' => 0];
+    }
+    $mail = $setup['mail'];
+
+    $productRows = '';
+    $count = count($lowProducts);
+    foreach ($lowProducts as $p) {
+        $name = htmlspecialchars($p['product_name'] ?? 'Unknown', ENT_QUOTES, 'UTF-8');
+        $qty = (int)($p['current_quantity'] ?? 0);
+        $qtyColor = $qty === 0 ? '#dc2626' : '#d97706';
+        $productRows .= "
+        <tr>
+            <td style=\"padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:14px;font-weight:600;color:#1e293b;\">{$name}</td>
+            <td style=\"padding:10px 8px;border-bottom:1px solid #e2e8f0;font-size:14px;font-weight:700;color:{$qtyColor};text-align:center;\">{$qty}</td>
+        </tr>";
+    }
+
+    $subject = "Low Stock Alert - {$count} product" . ($count !== 1 ? 's' : '') . ' need restocking';
+    $body = '<div style="font-family:Inter,Segoe UI,sans-serif;max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+        <div style="background:linear-gradient(135deg,#f59e0b,#d97706);padding:28px 32px;text-align:center;">
+            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.3px;">Low Stock Alert</h1>
+            <p style="margin:6px 0 0;color:#fef3c7;font-size:14px;font-weight:500;">' . $count . ' product' . ($count !== 1 ? 's' : '') . ' below safety threshold</p>
+        </div>
+        <div style="padding:24px 32px;">
+            <p style="margin:0 0 16px;color:#475569;font-size:15px;line-height:1.6;">The following products are running low on stock and need immediate attention. Please review and initiate restocking as soon as possible.</p>
+            <table style="width:100%;border-collapse:collapse;">
+                <thead>
+                    <tr>
+                        <th style="padding:8px;border-bottom:2px solid #e2e8f0;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;text-align:left;">Product</th>
+                        <th style="padding:8px;border-bottom:2px solid #e2e8f0;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;text-align:center;">Current Qty</th>
+                    </tr>
+                </thead>
+                <tbody>' . $productRows . '</tbody>
+            </table>
+            <p style="margin:20px 0 0;color:#94a3b8;font-size:13px;font-weight:500;text-align:center;">This is an automated alert. Please log in to the system to manage inventory.</p>
+        </div>
+        <div style="background:#f8fafc;padding:16px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+            <p style="margin:0;color:#94a3b8;font-size:12px;font-weight:500;">VIP Ice Plant &bull; Inventory Management System</p>
+        </div>
+    </div>';
+
+    $altBody = "LOW STOCK ALERT\n\n";
+    $altBody .= "{$count} product" . ($count !== 1 ? 's' : '') . " below safety threshold:\n\n";
+    foreach ($lowProducts as $p) {
+        $qty = (int)($p['current_quantity'] ?? 0);
+        $altBody .= "- {$p['product_name']} (Current Qty: {$qty})\n";
+    }
+    $altBody .= "\nPlease log in to the system to manage inventory.\nVIP Ice Plant";
+
+    $sentCount = 0;
+    $errors = [];
+    try {
+        $mail->Subject = $subject;
+        $mail->Body = $body;
+        $mail->AltBody = $altBody;
+
+        $sentCount = 0;
+        foreach ($recipients as $r) {
+            $email = trim((string)($r['email'] ?? ''));
+            if ($email === '') continue;
+            $name = trim((string)($r['full_name'] ?? $r['user_name'] ?? 'Staff'));
+            try {
+                $mail->addAddress($email, $name);
+                $sentCount++;
+            } catch (Exception $e) {
+                $errors[] = "Invalid address {$email}: " . $e->getMessage();
+                continue;
+            }
+        }
+
+        if ($sentCount === 0) {
+            return ['ok' => false, 'message' => 'No valid recipients', 'sent_to' => 0];
+        }
+
+        $mail->send();
+        return ['ok' => true, 'message' => "Low stock alert sent to {$sentCount} recipient(s)", 'sent_to' => $sentCount];
+    } catch (Exception $e) {
+        return ['ok' => false, 'message' => 'Failed to send low stock alert: ' . (string)$mail->ErrorInfo, 'sent_to' => $sentCount];
     }
 }

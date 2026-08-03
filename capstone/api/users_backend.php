@@ -1,7 +1,7 @@
 <?php
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/csrf.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/csrf.php';
 
 // Accessible to Owner (1) and Manager (2, 4)
 requireRole([1, 2, 4]);

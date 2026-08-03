@@ -2,9 +2,9 @@
 session_start();
 header('Content-Type: application/json; charset=utf-8');
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
 
 // Accessible to management and inventory staff (role IDs from DB)
 $management_roles = getManagementRoleIds($conn);

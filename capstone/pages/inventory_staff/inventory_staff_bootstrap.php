@@ -8,7 +8,9 @@ require_once __DIR__ . '/../../includes/logger.php';
 require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/inventory_staff_chrome.php';
 require_once __DIR__ . '/../../includes/adjustment_reason_helper.php';
+require_once __DIR__ . '/../../includes/damage_type_helper.php';
 require_once __DIR__ . '/../../includes/stock_reservation_helper.php';
+require_once __DIR__ . '/../../includes/rider_availability_helper.php';
 
 $staff_ids = getInventoryStaffRoleIds($conn);
 $allowed_roles = array_unique(array_merge([1, 2, 4], $staff_ids));
@@ -63,6 +65,9 @@ $product_discontinued_select = isset($products_cols['is_discontinued']) ? 'is_di
 $stockin_last_updated_select = isset($stockin_cols['updated_at'])
     ? 'updated_at'
     : (isset($stockin_cols['created_at']) ? 'created_at' : (isset($stockin_cols['date_in']) ? 'date_in' : 'NULL'));
+$stockin_last_updated_select_single = isset($stockin_cols['updated_at'])
+    ? 'latest.updated_at'
+    : (isset($stockin_cols['created_at']) ? 'latest.created_at' : (isset($stockin_cols['date_in']) ? 'latest.date_in' : 'NULL'));
 $product_created_fallback = isset($products_cols['created_at']) ? 'p.created_at' : 'NULL';
 
 if (!$is_inventory_staff) {
@@ -184,6 +189,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['production_type']) &&
 
             logActivity('INVENTORY', "Stock in recorded: +{$number_of_bags} units for {$product_row['product_name']}", $stockin_id);
             $_SESSION['success_msg'] = 'Stock In recorded successfully.';
+
+            // Send low stock alert if products are below threshold (silent on failure)
+            try {
+                require_once __DIR__ . '/../../includes/inventory_staff_chrome.php';
+                notifyLowStockToStaff($conn);
+            } catch (Throwable $e) {
+                // Email failure should not break stock-in
+            }
             $_SESSION['success_details'] = json_encode([
                 'product_name' => $product_row['product_name'],
                 'quantity' => $number_of_bags,
@@ -206,13 +219,184 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['production_type']) &&
     exit;
 }
 
+// ──────────────────────────────────────
+// Batch Stock In Handler (tabular mode)
+// ──────────────────────────────────────
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['batch_stockin']) && $_POST['batch_stockin'] === '1') {
+    if (!validateCsrfToken(false)) {
+        $_SESSION['inv_staff_flash_error'] = 'Invalid or expired security token. Please refresh and try again.';
+        header('Location: inventory_staff.php');
+        exit;
+    }
+
+    $stockin_date = !empty($_POST['batch_stockin_date']) ? $_POST['batch_stockin_date'] : null;
+    $created_by = $_SESSION['user_id'] ?? 1;
+    $errors = [];
+
+    if (empty($stockin_date)) {
+        $errors[] = 'Stock in date is required.';
+    } else {
+        $date_parts = explode('-', $stockin_date);
+        if (count($date_parts) !== 3 || !checkdate((int)$date_parts[1], (int)$date_parts[2], (int)$date_parts[0])) {
+            $errors[] = 'Invalid stock in date.';
+        } elseif (strtotime($stockin_date) > strtotime(date('Y-m-d'))) {
+            $errors[] = 'Stock in date cannot be in the future.';
+        }
+    }
+
+    if (!empty($errors)) {
+        $_SESSION['error_msg'] = implode("\n", $errors);
+        header('Location: inventory_staff.php');
+        exit;
+    }
+
+    $stockin_qty = $_POST['stockin_qty'] ?? [];
+    if (empty($stockin_qty) || !is_array($stockin_qty)) {
+        $_SESSION['error_msg'] = 'No stock in quantities provided.';
+        header('Location: inventory_staff.php');
+        exit;
+    }
+
+    // Filter out zero/empty values
+    $to_process = [];
+    foreach ($stockin_qty as $pid => $qty) {
+        $qty_val = (int)$qty;
+        if ($qty_val > 0) {
+            $to_process[(int)$pid] = $qty_val;
+        }
+    }
+
+    if (empty($to_process)) {
+        $_SESSION['error_msg'] = 'Please enter at least one product with a quantity greater than 0.';
+        header('Location: inventory_staff.php');
+        exit;
+    }
+
+    $processed_count = 0;
+    $processed_names = [];
+    $total_qty = 0;
+
+    try {
+        $conn->beginTransaction();
+
+        // Prepare all statements once outside the loop
+        $product_info_stmt = $conn->prepare("SELECT Product_ID, product_name, {$product_discontinued_select} FROM products WHERE Product_ID = ?");
+        $check_stmt = $conn->prepare("SELECT Inventory_ID, quantity FROM stockin_inventory WHERE Product_ID = ? ORDER BY {$stockin_order_expr} DESC, Inventory_ID DESC LIMIT 1");
+
+        $prod_insert_stmt = null;
+        if ($has_productions_table) {
+            $prod_insert_stmt = $conn->prepare("INSERT INTO productions (Product_ID, production_type, produced_qty, production_date, created_by, Order_ID, bag_size, number_of_bags) VALUES (?, 'stockin', ?, ?, ?, NULL, NULL, ?)");
+        }
+
+        // Build stockin_inventory INSERT once (columns don't change per product)
+        $si_cols = ['Product_ID', 'date_in', 'handled_by', 'quantity'];
+        $si_vals = ['?', '?', '?', '?'];
+        $si_param_builders = [];
+        $col_idx = 4;
+        if ($stockin_has_production_id) {
+            $si_cols[] = 'Production_ID'; $si_vals[] = '?';
+            $si_param_builders[] = static fn(&$params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity) => $params[] = $production_id;
+        }
+        if ($stockin_has_production_type) {
+            $si_cols[] = 'production_type'; $si_vals[] = '?';
+            $si_param_builders[] = static fn(&$params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity) => $params[] = 'stockin';
+        }
+        if ($stockin_has_produced_qty) {
+            $si_cols[] = 'produced_qty'; $si_vals[] = '?';
+            $si_param_builders[] = static fn(&$params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity) => $params[] = $qty_to_add;
+        }
+        if ($stockin_has_number_of_bags) {
+            $si_cols[] = 'number_of_bags'; $si_vals[] = '?';
+            $si_param_builders[] = static fn(&$params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity) => $params[] = $qty_to_add;
+        }
+        if ($stockin_has_storage_limit) {
+            $si_cols[] = 'storage_limit'; $si_vals[] = '?';
+            $si_param_builders[] = static fn(&$params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity) => $params[] = 1000;
+        }
+        $insert_inv_stmt = $conn->prepare("INSERT INTO stockin_inventory (" . implode(', ', $si_cols) . ") VALUES (" . implode(', ', $si_vals) . ")");
+
+        $ledger_stmt = null;
+        if ($has_inventory_ledger_table) {
+            $ledger_stmt = $conn->prepare("INSERT INTO inventory_ledger (product_id, transaction_type, transaction_id, quantity_change, balance_after, handled_by, notes) VALUES (?, 'STOCK IN', ?, ?, ?, ?, ?)");
+        }
+
+        foreach ($to_process as $pid => $qty_to_add) {
+            $product_info_stmt->execute([$pid]);
+            $product_row = $product_info_stmt->fetch(PDO::FETCH_ASSOC);
+            if (!$product_row) continue;
+            if ((int)($product_row['is_discontinued'] ?? 0) === 1) continue;
+
+            $production_id = null;
+            if ($prod_insert_stmt) {
+                if ($prod_insert_stmt->execute([$pid, $qty_to_add, $stockin_date, $created_by, $qty_to_add])) {
+                    $production_id = (int)$conn->lastInsertId();
+                }
+            }
+
+            $check_stmt->execute([$pid]);
+            $inv_row = $check_stmt->fetch(PDO::FETCH_ASSOC);
+            $old_quantity = $inv_row ? (float)$inv_row['quantity'] : 0;
+            $new_quantity = $old_quantity + $qty_to_add;
+
+            $insert_params = [$pid, $stockin_date, $created_by, $new_quantity];
+            foreach ($si_param_builders as $builder) {
+                $builder($insert_params, $pid, $production_id, $qty_to_add, $stockin_date, $created_by, $new_quantity);
+            }
+            $insert_inv_stmt->execute($insert_params);
+            $stockin_id = (int)$conn->lastInsertId();
+
+            if ($ledger_stmt) {
+                $ledger_stmt->execute([$pid, $stockin_id, $qty_to_add, $new_quantity, $created_by, 'Batch stock in entry']);
+            }
+
+            $processed_count++;
+            $processed_names[] = $product_row['product_name'];
+            $total_qty += $qty_to_add;
+        }
+
+        $conn->commit();
+
+        $summary = implode(', ', array_slice($processed_names, 0, 5));
+        if (count($processed_names) > 5) $summary .= ' and ' . (count($processed_names) - 5) . ' more';
+        logActivity('INVENTORY', "Batch stock in: +{$total_qty} units across {$processed_count} products ({$summary})");
+
+        $_SESSION['success_msg'] = "Stock in recorded for {$processed_count} product(s) (+{$total_qty} units).";
+
+        // Send low stock alert silently - never break stock-in on email failure
+        try {
+            require_once __DIR__ . '/../../includes/inventory_staff_chrome.php';
+            notifyLowStockToStaff($conn);
+        } catch (Throwable $e) {
+            // Email failure should not break stock-in
+        }
+
+        header('Location: inventory_staff.php');
+        exit;
+    } catch (Throwable $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        $_SESSION['error_msg'] = 'Error recording batch stock in: ' . $e->getMessage();
+        header('Location: inventory_staff.php');
+        exit;
+    }
+}
+
 // Data Queries
 $query = "SELECT 
     p.Product_ID, p.product_name, {$product_unit_select}, {$product_wholesale_select}, {$product_retail_select},
-    COALESCE((SELECT quantity FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY {$stockin_order_expr} DESC, Inventory_ID DESC LIMIT 1), 0) as current_quantity,
-    COALESCE((SELECT storage_limit FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY {$stockin_order_expr} DESC, Inventory_ID DESC LIMIT 1), 100) as storage_limit,
-    COALESCE((SELECT {$stockin_last_updated_select} FROM stockin_inventory WHERE Product_ID = p.Product_ID ORDER BY {$stockin_order_expr} DESC, Inventory_ID DESC LIMIT 1), {$product_created_fallback}) as last_updated
-FROM products p {$product_unit_join} {$product_active_where} ORDER BY p.product_name";
+    COALESCE(latest.quantity, 0) AS current_quantity,
+    COALESCE(latest.storage_limit, 100) AS storage_limit,
+    COALESCE({$stockin_last_updated_select_single}, {$product_created_fallback}) AS last_updated
+FROM products p {$product_unit_join}
+LEFT JOIN (
+    SELECT si.*
+    FROM stockin_inventory si
+    INNER JOIN (
+        SELECT Product_ID, MAX(Inventory_ID) AS max_id
+        FROM stockin_inventory
+        GROUP BY Product_ID
+    ) grouped ON si.Inventory_ID = grouped.max_id
+) latest ON p.Product_ID = latest.Product_ID
+{$product_active_where} ORDER BY p.product_name";
 $products = $conn->query($query)->fetchAll(PDO::FETCH_ASSOC);
 
 $productIds = array_values(array_filter(array_map(static fn ($r) => (int)($r['Product_ID'] ?? 0), $products), static fn ($id) => $id > 0));
@@ -397,6 +581,22 @@ $ddr_queue_show = ddr_table_exists($conn) && userCanAccessDeliveryDamageQueue($c
 $ddr_pending_n = $ddr_queue_show ? countPendingDeliveryDamageReports($conn) : 0;
 $ddr_nav_href = $ddr_queue_show ? 'inventory_staff_delivery_damage.php' : '';
 
+// Fetch rider availability
+$rider_ids = getRiderRoleIds($conn);
+$rider_groups = ['Available' => [], 'On Delivery' => [], 'Off Duty' => []];
+try {
+    ensureRiderWorkflowSchema($conn);
+    $ra_rows = getRiderAvailabilityRows($conn, $rider_ids);
+    foreach ($ra_rows as $r) {
+        $s = (string)($r['rider_availability_status'] ?? 'Available');
+        if (isset($rider_groups[$s])) {
+            $rider_groups[$s][] = $r;
+        }
+    }
+} catch (Throwable $e) {
+    $rider_groups = ['Available' => [], 'On Delivery' => [], 'Off Duty' => []];
+}
+
 // Calculate overdue orders count for notification badge
 $overdue_orders_count = 0;
 try {
@@ -454,6 +654,7 @@ foreach ($products as $p) {
 
 $reasons = getAdjustmentReasonOptions($conn);
 $has_other_reason = in_array('Other (with remarks)', $reasons, true);
+$damage_type_reasons = getDamageTypeOptions();
 
 $inv_staff_flash_success = '';
 $inv_staff_flash_success_details = null;

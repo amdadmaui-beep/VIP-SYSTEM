@@ -456,6 +456,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const retryAfter = Number(data.retry_after || (res.status === 429 ? 60 : 0));
             
             showError(data.message || 'Login failed. Please try again.');
+            pwInput.value = '';
+            pwInput.focus();
 
             if (data.captcha) {
                 document.getElementById('captchaEq').innerHTML = `${data.captcha.n1} <span class="text-brand-500 mx-1">+</span> ${data.captcha.n2}`;

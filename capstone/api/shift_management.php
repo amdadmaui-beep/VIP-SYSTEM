@@ -9,11 +9,11 @@
  * - Manager PIN validation
  */
 
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/csrf.php';
-require_once '../includes/module_access.php';
-require_once '../includes/cash_session_helper.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/csrf.php';
+require_once __DIR__ . '/../includes/module_access.php';
+require_once __DIR__ . '/../includes/cash_session_helper.php';
 
 header('Content-Type: application/json');
 

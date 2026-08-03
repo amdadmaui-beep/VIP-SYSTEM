@@ -423,7 +423,7 @@ if (!function_exists('formatDamageDate')) {
                     </div>
                     <div>
                         <h4 style="color: #1e293b; margin: 0; font-weight: 700; font-size: 1.05rem;"><?php echo $pending_count; ?> Pending Rider Reports</h4>
-                        <p style="color: #64748b; margin: 0.1rem 0 0 0; font-size: 0.85rem;">Review damage reports submitted during deliveries.</p>
+                        <p style="color: #64748b; margin: 0.1rem 0 0 0; font-size: 0.85rem;">Open Damage Reports to review rider submissions or view staff photo evidence.</p>
                     </div>
                 </div>
                 <div style="color: #d97706; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; background: #fffbeb; padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid #fde68a; display: flex; align-items: center; gap: 0.5rem;">
@@ -636,12 +636,12 @@ if (!function_exists('formatDamageDate')) {
     }
 
     <?php if (isset($_SESSION['success'])): ?>
-        Swal.fire({ icon: 'success', title: 'Success', text: '<?php echo $_SESSION['success']; ?>', confirmButtonColor: '#1e293b' });
+        Swal.fire({ icon: 'success', title: 'Success', text: <?php echo json_encode((string) $_SESSION['success'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>, confirmButtonColor: '#1e293b' });
         <?php unset($_SESSION['success']); ?>
     <?php endif; ?>
 
     <?php if (isset($_SESSION['error'])): ?>
-        Swal.fire({ icon: 'error', title: 'Error', text: '<?php echo $_SESSION['error']; ?>', confirmButtonColor: '#ef4444' });
+        Swal.fire({ icon: 'error', title: 'Error', text: <?php echo json_encode((string) $_SESSION['error'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>, confirmButtonColor: '#ef4444' });
         <?php unset($_SESSION['error']); ?>
     <?php endif; ?>
 </script>

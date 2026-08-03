@@ -1017,7 +1017,10 @@
                     let appsHtml = '';
                     if (result.applications && result.applications.length > 0) {
                         result.applications.forEach(app => {
-                            appsHtml += `<li>AR ID #${app.ar_id}: Applied <strong>₱${app.applied.toFixed(2)}</strong> (New Bal: ₱${app.new_balance.toFixed(2)})</li>`;
+                            const dueNote = app.due_date_extended && app.new_due_date
+                                ? `, New Due: <strong>${app.new_due_date}</strong>`
+                                : '';
+                            appsHtml += `<li>AR ID #${app.ar_id}: Applied <strong>₱${app.applied.toFixed(2)}</strong> (New Bal: ₱${app.new_balance.toFixed(2)}${dueNote})</li>`;
                         });
                     }
 
@@ -1034,6 +1037,7 @@
                                 ${result.credit_balance > 0 ? `<p style="color: var(--status-pending); font-style: italic; margin-top: 0.25rem;">
                                     * Remainder of ₱${result.credit_balance.toFixed(2)} left as credit balance for customer.
                                 </p>` : ''}
+                                ${result.email_sent ? `<p style="color: var(--status-collected); margin-top: 0.35rem;"><i class="fas fa-envelope"></i> Payment confirmation email sent to customer.</p>` : `<p style="color: var(--text-muted); margin-top: 0.35rem;"><i class="fas fa-envelope-open"></i> No customer email on file — payment notice not sent.</p>`}
                             </div>
                         `,
                         confirmButtonText: 'Done',

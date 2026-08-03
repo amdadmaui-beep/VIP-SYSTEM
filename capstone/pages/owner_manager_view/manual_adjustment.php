@@ -314,7 +314,7 @@ $production_history = $conn->query($prod_history_query)->fetchAll(PDO::FETCH_ASS
             </div>
             <div class="flex items-center gap-2 shrink-0">
                 <?php if ($ddr_queue_show && $ddr_nav_href !== ''): ?>
-                <a href="<?php echo htmlspecialchars($ddr_nav_href); ?>" class="relative inline-flex h-10 min-w-[2.5rem] px-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 items-center justify-center transition-colors" title="Rider delivery damage reports — review pending">
+                <a href="<?php echo htmlspecialchars($ddr_nav_href); ?>" class="relative inline-flex h-10 min-w-[2.5rem] px-2 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 items-center justify-center transition-colors" title="Damage Reports — rider review and staff photo evidence">
                     <i class="fas fa-bell text-sm"></i>
                     <?php if ($ddr_pending_n > 0): ?>
                     <span class="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-0.5 rounded-full bg-red-500 text-white text-[9px] font-black leading-none flex items-center justify-center"><?php echo $ddr_pending_n > 99 ? '99+' : (int)$ddr_pending_n; ?></span>
@@ -337,7 +337,7 @@ $production_history = $conn->query($prod_history_query)->fetchAll(PDO::FETCH_ASS
             </button>
             <?php if ($ddr_queue_show && $ddr_nav_href !== ''): ?>
             <button type="button" onclick="location.href='<?php echo htmlspecialchars($ddr_nav_href); ?>'" class="flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-all flex items-center gap-2">
-                <i class="fas fa-clipboard-check"></i> Delivery damage
+                <i class="fas fa-clipboard-check"></i> Damage Reports
             </button>
             <?php endif; ?>
             <button type="button" id="navTabHistory" onclick="switchTab('history', this)" class="nav-tab flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-100 transition-all flex items-center gap-2">

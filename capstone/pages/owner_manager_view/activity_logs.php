@@ -552,18 +552,18 @@ $activityLogsUploadPrefix = ($reqDirBasename === 'owner_manager_view') ? '../../
                     <option value="INVENTORY" <?php echo ($_GET['type'] ?? '') == 'INVENTORY' ? 'selected' : ''; ?>>Inventory</option>
                     <option value="DELIVERY" <?php echo ($_GET['type'] ?? '') == 'DELIVERY' ? 'selected' : ''; ?>>Delivery</option>
                     <option value="USER_MGMT" <?php echo ($_GET['type'] ?? '') == 'USER_MGMT' ? 'selected' : ''; ?>>User Management</option>
-                    <option value="DAMAGE" <?php echo ($_GET['type'] ?? '') == 'DAMAGE' ? 'selected' : ''; ?>>Damage</option>
-                    <option value="LOGIN" <?php echo ($_GET['type'] ?? '') == 'LOGIN' ? 'selected' : ''; ?>>Login</option>
-                    <option value="LOGOUT" <?php echo ($_GET['type'] ?? '') == 'LOGOUT' ? 'selected' : ''; ?>>Logout</option>
+                    <option value="DAMAGE" <?php echo (($_GET['type'] ?? '') == 'DAMAGE') ? 'selected' : ''; ?>>Damage</option>
+                    <option value="LOGIN" <?php echo (($_GET['type'] ?? '') == 'LOGIN') ? 'selected' : ''; ?>>Login</option>
+                    <option value="LOGOUT" <?php echo (($_GET['type'] ?? '') == 'LOGOUT') ? 'selected' : ''; ?>>Logout</option>
                 </select>
             </div>
             <div class="logs-filter-group">
                 <label class="logs-filter-label">Date From</label>
-                <input type="date" name="start" class="logs-filter-input" value="<?php echo $_GET['start'] ?? ''; ?>">
+                <input type="date" name="start" class="logs-filter-input" value="<?php echo htmlspecialchars($_GET['start'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
             </div>
             <div class="logs-filter-group">
                 <label class="logs-filter-label">Date To</label>
-                <input type="date" name="end" class="logs-filter-input" value="<?php echo $_GET['end'] ?? ''; ?>">
+                <input type="date" name="end" class="logs-filter-input" value="<?php echo htmlspecialchars($_GET['end'] ?? '', ENT_QUOTES, 'UTF-8'); ?>">
             </div>
             <button type="submit" class="logs-btn-apply"><i class="fas fa-filter"></i> Apply Filters</button>
             <a href="activity_logs.php" class="logs-btn-reset"><i class="fas fa-rotate-left"></i> Reset</a>

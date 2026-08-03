@@ -88,33 +88,32 @@ document.addEventListener('DOMContentLoaded', function() {
             }
 
             // checkCustomerCredit might still be running or was already run
-            // Check if customer has balance and show warning
-            if (window.customerHasBalance) {
-                if (window.customerIsOverLimit) {
-                    Swal.fire({
-                        title: 'Credit Limit Exceeded',
-                        text: `This customer has a balance of ₱${window.customerRemainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}, which exceeds their credit limit. You cannot create a new credit order for them.`,
-                        icon: 'error',
-                        confirmButtonText: 'OK'
-                    });
-                    return;
-                } else {
-                    const result = await Swal.fire({
-                        title: 'Customer Has Balance',
-                        html: `<div style="text-align: left;">
-                                <p>This customer still has a remaining balance of <strong>₱${window.customerRemainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong> in Accounts Receivable.</p>
-                                <p>Do you want to proceed with creating this new order?</p>
-                               </div>`,
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonText: 'Yes, proceed',
-                        cancelButtonText: 'No, stop',
-                        confirmButtonColor: '#f59e0b'
-                    });
+            // Show credit advisory if customer has balance or is near limit
+            if (window.customerHasBalance && window.customerIsOverLimit) {
+                Swal.fire({
+                    title: 'Credit Limit Fully Used',
+                    text: `This customer's total balance (₱${window.customerRemainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}) has reached their credit limit. You may still create orders, but consider Cash-Only terms until payment is received.`,
+                    icon: 'warning',
+                    confirmButtonText: 'Proceed anyway',
+                    confirmButtonColor: '#f59e0b'
+                });
+            } else if (window.customerHasBalance && window.customerAvailableCredit !== undefined && window.customerAvailableCredit > 0) {
+                const result = await Swal.fire({
+                    title: 'Customer Has Outstanding Balance',
+                    html: `<div style="text-align: left;">
+                            <p>This customer has a remaining balance of <strong>₱${window.customerRemainingBalance.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong> in Accounts Receivable.</p>
+                            <p>Available credit: <strong>₱${window.customerAvailableCredit.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></p>
+                            <p>Do you want to proceed with creating this new order?</p>
+                           </div>`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, proceed',
+                    cancelButtonText: 'No, stop',
+                    confirmButtonColor: '#f59e0b'
+                });
 
-                    if (!result.isConfirmed) {
-                        return;
-                    }
+                if (!result.isConfirmed) {
+                    return;
                 }
             }
             
@@ -546,16 +545,18 @@ function renderProductCatalog() {
         
         const priceToDisplay = parseFloat(product.wholesale_price).toFixed(2);
         const currentQty = parseFloat(product.current_quantity || 0);
+        const inCart = orderCart.filter(i => i.id === product.Product_ID).reduce((sum, i) => sum + i.quantity, 0);
+        const remainingQty = Math.max(0, currentQty - inCart);
         
         // Define badges logic like in POS
         let badgeClass = 'badge-success';
-        let badgeText = 'QTY: ' + currentQty;
-        if (currentQty <= 0) {
+        let badgeText = remainingQty > 0 ? 'QTY: ' + remainingQty : 'QTY: 0';
+        if (remainingQty <= 0) {
             badgeClass = 'badge-danger';
             badgeText = 'OUT';
-        } else if (currentQty <= 5) {
+        } else if (remainingQty <= 5) {
             badgeClass = 'badge-warning';
-            badgeText = 'LOW: ' + currentQty;
+            badgeText = 'LOW: ' + remainingQty;
         }
 
         const iconName = product.product_name.toLowerCase().includes('crush') ? 'fa-snowflake' : 'fa-cubes';
@@ -608,6 +609,7 @@ function onCustomerChange(select) {
 
 function addToCart(product) {
     const existingIndex = orderCart.findIndex(i => i.id === product.Product_ID);
+    const isNew = existingIndex < 0;
     if (existingIndex >= 0) {
         orderCart[existingIndex].quantity++;
     } else {
@@ -622,6 +624,14 @@ function addToCart(product) {
         });
     }
     renderCart();
+    renderProductCatalog();
+    if (isNew) {
+        const container = document.getElementById('cartItemsContainer');
+        const lastItem = container?.lastElementChild;
+        if (lastItem && lastItem.classList.contains('cart-item-row-pos')) {
+            lastItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
 }
 
 function updateCartItemQty(index, delta) {
@@ -632,11 +642,13 @@ function updateCartItemQty(index, delta) {
         removeFromCart(index);
     }
     renderCart();
+    renderProductCatalog();
 }
 
 function removeFromCart(index) {
     orderCart.splice(index, 1);
     renderCart();
+    renderProductCatalog();
 }
 
 function setCartItemQty(index, val) {
@@ -646,8 +658,8 @@ function setCartItemQty(index, val) {
     } else if (newQty === 0) {
         removeFromCart(index);
     }
-    // If invalid (isNaN or negative), we don't update the quantity but we still re-render to revert the input text
     renderCart();
+    renderProductCatalog();
 }
 
 function renderCart() {

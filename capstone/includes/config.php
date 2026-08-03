@@ -85,6 +85,9 @@ if (!defined('SESSION_LIFETIME')) define('SESSION_LIFETIME', (int)env('SESSION_L
 if (!defined('CREDIT_LIMIT_ENABLED')) define('CREDIT_LIMIT_ENABLED', env('CREDIT_LIMIT_ENABLED', false));
 if (!defined('CREDIT_LIMIT_WARNING_THRESHOLD')) define('CREDIT_LIMIT_WARNING_THRESHOLD', (float)env('CREDIT_LIMIT_WARNING_THRESHOLD', 0.9));
 
+// VIP AI Assistant — disabled by default; set VIP_AI_ASSISTANT_ENABLED=true in .env to show
+if (!defined('VIP_AI_ASSISTANT_ENABLED')) define('VIP_AI_ASSISTANT_ENABLED', env('VIP_AI_ASSISTANT_ENABLED', false));
+
 // Encryption key for sensitive data
 if (!defined('ENCRYPTION_KEY')) {
     $ek = env('ENCRYPTION_KEY', '');

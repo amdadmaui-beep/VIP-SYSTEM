@@ -6,11 +6,18 @@ require_once __DIR__ . '/rider_view/rider_bootstrap.php';
 
 include __DIR__ . '/rider_view/Rider_head.php';
 include __DIR__ . '/rider_view/Rider_header_nav.php';
+?>
+
+<main class="px-4 py-4 space-y-4">
+<?php
 include __DIR__ . '/rider_view/Rider_Dashboard.php';
 include __DIR__ . '/rider_view/Rider_Queue.php';
 include __DIR__ . '/rider_view/Rider_Delivered_history.php';
 include __DIR__ . '/rider_view/Rider_Cancelled_Orders.php';
 include __DIR__ . '/rider_view/Rider_modals_and_forms.php';
+?>
+</main>
+<?php
 
 $delivery_ids_for_js = array_values(array_map('intval', array_column($deliveries, 'Delivery_ID')));
 $ready_delivery_ids_for_js = array_values(array_map('intval', array_column(array_filter($deliveries, function($d) {

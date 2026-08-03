@@ -151,12 +151,6 @@ function ordersHandleCreateOrder(PDO $conn, int $userId): void
             if ($quantity > 999999) $errors[] = "Item #{$item_num}: Quantity exceeds maximum allowed (999,999).";
             if ($unit_price < 0) $errors[] = "Item #{$item_num}: Unit price cannot be negative.";
             if ($unit_price > 999999) $errors[] = "Item #{$item_num}: Unit price exceeds maximum allowed (P999,999).";
-            if ($product_id > 0 && $quantity > 0) {
-                $available = getAvailableStock($conn, $product_id);
-                if ($quantity > $available) {
-                    $errors[] = "Item #{$item_num}: Requested quantity exceeds available stock. Available: " . rtrim(rtrim(number_format($available, 2, '.', ''), '0'), '.');
-                }
-            }
         }
     }
 
@@ -195,13 +189,10 @@ function ordersHandleCreateOrder(PDO $conn, int $userId): void
         $unpaid_stmt->execute([$customer_id]);
         $total_unpaid = (float)($unpaid_stmt->fetchColumn() ?: 0);
 
-        // Zero-balance rule: any unpaid balance blocks new orders
-        if ($total_unpaid > 0) {
-            $errors[] = "Order blocked: Customer has an outstanding balance of \u{20B1}" . number_format($total_unpaid, 2) . ". Please settle payment before placing new orders.";
-        }
-        // Credit cap rule: new order total cannot exceed credit limit (when no existing balance)
-        elseif ($customer_credit_limit > 0 && $line_total > $customer_credit_limit) {
-            $errors[] = "Order blocked: Order total (\u{20B1}" . number_format($line_total, 2) . ") exceeds customer's credit limit of \u{20B1}" . number_format($customer_credit_limit, 2) . ".";
+        // Combined credit check: allow orders as long as total unpaid + new order doesn't exceed credit limit
+        $total_after_order = $total_unpaid + $line_total;
+        if ($customer_credit_limit > 0 && $total_after_order > $customer_credit_limit) {
+            $errors[] = "Order blocked: This order would bring the customer's total balance to \u{20B1}" . number_format($total_after_order, 2) . ", exceeding their credit limit of \u{20B1}" . number_format($customer_credit_limit, 2) . ".";
         }
     } catch (Exception $e) {
         // Log error but don't block order if credit check fails (fallback)

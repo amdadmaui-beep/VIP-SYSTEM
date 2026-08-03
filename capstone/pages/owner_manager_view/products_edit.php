@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/product_form_categories.php';
 
 // Accessible to Owner (1) and Manager (2, 4)
@@ -34,6 +35,9 @@ try {
 } catch (Throwable $e) {
     $storage_limit = 100;
 }
+
+$replenishment_level = (float)($product['safety_stock'] ?? 0);
+if ($replenishment_level <= 0) $replenishment_level = 50;
 
 // Fetch units from database
 $units_query = "SELECT unit_id, unit_name FROM units ORDER BY unit_name";
@@ -72,6 +76,9 @@ if (!empty($old_input)) {
     if (isset($old_input['storage_limit'])) {
         $storage_limit = floatval($old_input['storage_limit']);
     }
+    if (isset($old_input['replenishment_level'])) {
+        $replenishment_level = floatval($old_input['replenishment_level']);
+    }
 }
 
 // Image upload path helper
@@ -80,12 +87,18 @@ $product_image_url = $product['product_image'] ? '../uploads/products/' . htmlsp
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken(false)) {
+        $_SESSION['products_edit_errors'] = ['Invalid or expired security token. Please refresh and try again.'];
+        header("Location: products_edit.php?id=" . urlencode((string)$product_id));
+        exit;
+    }
     $product_name = trim($_POST['product_name']);
     $unit_id = intval($_POST['unit_id']);
     $category_id = !empty($_POST['category_id']) ? intval($_POST['category_id']) : null;
     $wholesale_price = floatval($_POST['wholesale_price']);
     $retail_price = floatval($_POST['retail_price']);
     $storage_limit = floatval($_POST['storage_limit'] ?? 0);
+    $replenishment_level = floatval($_POST['replenishment_level'] ?? 50);
     $is_discontinued = isset($_POST['is_discontinued']) ? 1 : 0;
     $description = trim($_POST['description']);
 
@@ -154,11 +167,11 @@ $pending_image = null;
     if (empty($errors)) {
         $new_image = $pending_image ? $pending_image : ($remove_image ? null : $product_image);
         if ($has_category_column) {
-            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, category_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
-            $update_params = [$product_name, $unit_id, $category_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id];
+            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, category_id = ?, wholesale_price = ?, retail_price = ?, safety_stock = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
+            $update_params = [$product_name, $unit_id, $category_id, $wholesale_price, $retail_price, $replenishment_level, $is_discontinued, $description, $new_image, $product_id];
         } else {
-            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
-            $update_params = [$product_name, $unit_id, $wholesale_price, $retail_price, $is_discontinued, $description, $new_image, $product_id];
+            $update_sql = "UPDATE products SET product_name = ?, unit_id = ?, wholesale_price = ?, retail_price = ?, safety_stock = ?, is_discontinued = ?, description = ?, product_image = ? WHERE Product_ID = ?";
+            $update_params = [$product_name, $unit_id, $wholesale_price, $retail_price, $replenishment_level, $is_discontinued, $description, $new_image, $product_id];
         }
         $update_stmt = $conn->prepare($update_sql);
         if ($update_stmt->execute($update_params)) {
@@ -464,6 +477,7 @@ input:checked + .slider:before { transform: translateX(22px); }
 </style>
 
             <form method="POST" class="product-form" enctype="multipart/form-data">
+                <?php echo csrfTokenField(); ?>
                 <div class="product-layout">
                     <!-- Main Column -->
                     <div class="main-column">
@@ -525,6 +539,11 @@ input:checked + .slider:before { transform: translateX(22px); }
                                 </div>
                             </div>
                             
+                            <div class="form-group">
+                                <label for="replenishment_level">Replenishment Level *</label>
+                                <input type="number" id="replenishment_level" name="replenishment_level" class="form-input" step="1" min="1" value="<?php echo htmlspecialchars((string)(int)$replenishment_level); ?>">
+                                <small style="color:#64748b; display:block; margin-top:4px; font-size:0.75rem;">Triggers low-stock alert when current stock is at or below this level.</small>
+                            </div>
                             <div class="form-group">
                                 <label for="storage_limit">Storage Limit *</label>
                                 <input type="number" id="storage_limit" name="storage_limit" class="form-input" step="1" min="1" required value="<?php echo htmlspecialchars((string)$storage_limit); ?>">

@@ -7,6 +7,7 @@ require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/delivery_cancellation_helper.php';
 require_once __DIR__ . '/../../includes/rider_availability_helper.php';
 require_once __DIR__ . '/../../includes/preparation_tasks_helper.php';
+require_once __DIR__ . '/../../includes/delivery_damage_ui_helper.php';
 
 header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 header('Pragma: no-cache');
@@ -392,4 +393,16 @@ try {
 } catch (Throwable $e) {
     $rider_availability_status = 'Available';
 }
+
+// ── Navigation chrome ──
+$activeTab = 'dashboard';
+if (isset($_GET['tab'])) {
+    if ($_GET['tab'] === 'queue') $activeTab = 'queue';
+    elseif ($_GET['tab'] === 'history') $activeTab = 'history';
+    elseif ($_GET['tab'] === 'cancelled') $activeTab = 'cancelled';
+    elseif ($_GET['tab'] === 'damage-reports') $activeTab = 'damage-reports';
+}
+$display_role = 'Delivery Rider';
+$total_notifications_n = getUnreadNotificationsCount($conn);
+$rider_session_label = 'Rider Session';
 

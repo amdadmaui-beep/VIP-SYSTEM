@@ -3,6 +3,7 @@ session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/csrf.php';
+require_once __DIR__ . '/../../includes/ar_reminder_helper.php';
 
 // Accessible to Owner (1) and Manager (2, 4)
 requireRole([1, 2, 4]);
@@ -110,16 +111,7 @@ $total_pages = 1;
 if ($ar_table_exists) {
     // Ensure reminder-tracking table exists for AR email badge display.
     try {
-        $conn->exec("
-            CREATE TABLE IF NOT EXISTS ar_email_reminders (
-                reminder_id INT AUTO_INCREMENT PRIMARY KEY,
-                AR_ID INT NOT NULL,
-                customer_email VARCHAR(191) NOT NULL,
-                sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                sent_by INT NULL,
-                INDEX idx_ar_sent_at (AR_ID, sent_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ");
+        arReminderEnsureTracking($conn);
     } catch (Throwable $e) {
         // Non-blocking for page rendering.
     }

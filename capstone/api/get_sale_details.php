@@ -1,8 +1,8 @@
 <?php
 header('Content-Type: application/json');
 require_once __DIR__ . '/../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/roles_helper.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/roles_helper.php';
 
 $management_ids = getManagementRoleIds($conn);
 requireRole(empty($management_ids) ? [1] : $management_ids);

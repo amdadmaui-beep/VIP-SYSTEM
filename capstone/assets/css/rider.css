@@ -16,22 +16,7 @@
             --rider-shadow-md: 0 10px 30px rgba(16, 17, 20, 0.08);
         }
         * { box-sizing: border-box; letter-spacing: 0; }
-        body {
-            font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            font-weight: 400;
-            background:
-                radial-gradient(circle at 0% 0%, rgba(113, 50, 245, 0.09), transparent 45%),
-                radial-gradient(circle at 100% 100%, rgba(91, 30, 207, 0.07), transparent 35%),
-                var(--rider-bg);
-            color: var(--rider-text);
-            min-height: 100vh;
-            padding-bottom: env(safe-area-inset-bottom, 1.5rem);
-            font-size: 0.9375rem;
-            line-height: 1.5;
-            -webkit-font-smoothing: antialiased;
-            text-rendering: geometricPrecision;
-        }
-        .rider-wrapper { max-width: 520px; margin: 0 auto; padding: 1rem; min-height: 100vh; }
+        body { font-family: 'Poppins', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
 
         .rider-header {
             position: relative;
@@ -93,19 +78,59 @@
         }
         .btn-logout:hover { color: var(--rider-text); border-color: var(--rider-muted); }
 
-        .nav-tabs-rider {
+        .rider-nav-tab {
+            flex-shrink: 0;
+            padding: 0.625rem 1rem;
+            border-radius: 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            transition: all 0.15s;
             display: flex;
-            background: var(--rider-surface);
-            border: 1px solid var(--rider-border);
-            border-radius: 12px;
-            padding: 4px;
-            margin-bottom: 1.25rem;
-            box-shadow: var(--rider-shadow-sm);
-            position: sticky;
-            top: 8px;
-            z-index: 30;
-            backdrop-filter: blur(6px);
+            align-items: center;
+            gap: 0.5rem;
+            white-space: nowrap;
+            color: #64748b;
+            text-decoration: none;
         }
+        .rider-nav-tab:hover { background: #f1f5f9; color: #1e293b; }
+        .rider-nav-tab.rider-nav-active {
+            background: #4f46e5;
+            color: #fff;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+        }
+        .rider-nav-tab.rider-nav-active:hover { background: #4338ca; color: #fff; }
+        .rider-drawer-link {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #475569;
+            text-decoration: none;
+            transition: all 0.15s;
+        }
+        .rider-drawer-link:hover { background: #f1f5f9; color: #1e293b; }
+        .rider-drawer-link.rider-drawer-active {
+            background: #eef2ff;
+            color: #4f46e5;
+        }
+        .rider-drawer-backdrop {
+            opacity: 0;
+            transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+        }
+        .rider-drawer-backdrop.inv-drawer-visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .rider-drawer-panel {
+            transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .rider-drawer-panel.is-closed { transform: translateX(-100%); }
+        .rider-drawer-panel.is-open { transform: translateX(0); }
+        body.rider-drawer-locked { overflow: hidden; }
         .nav-tab-rider {
             flex: 1;
             padding: 0.625rem 0.5rem;
@@ -453,6 +478,48 @@
         .btn-rider.btn-start-trip { background: #10b981; color: #fff; }
         .btn-rider.btn-view-details { background: var(--rider-bg); color: var(--rider-text); border: 1px solid var(--rider-border); }
         .btn-rider.btn-complete { background: var(--rider-accent); color: #fff; }
+
+        .vehicle-issue-report-card {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem 1rem;
+            padding: 1rem 1.1rem;
+            border-radius: 14px;
+            background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+            border: 1px solid #fcd34d;
+        }
+        .vehicle-issue-report-copy {
+            flex: 1;
+            min-width: 220px;
+            color: #92400e;
+            font-size: 0.82rem;
+            line-height: 1.45;
+        }
+        .vehicle-issue-report-copy strong {
+            display: block;
+            font-size: 0.92rem;
+            margin-bottom: 0.25rem;
+        }
+        .vehicle-issue-report-copy p { margin: 0; }
+        .btn-vehicle-issue {
+            border: none;
+            border-radius: 999px;
+            padding: 0.65rem 1.1rem;
+            font-weight: 700;
+            font-size: 0.82rem;
+            color: #fff;
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            box-shadow: 0 6px 16px rgba(217, 119, 6, 0.28);
+            cursor: pointer;
+            white-space: nowrap;
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
+        }
+        .btn-vehicle-issue:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 8px 20px rgba(217, 119, 6, 0.34);
+        }
         
         .btn-cancel-delivery { background: transparent; border: none; color: #c05a5a; font-size: 0.9rem; font-weight: 700; text-align: center; width: 100%; padding: 0.5rem; margin-top: 0.2rem; cursor:pointer;}
 
@@ -576,6 +643,10 @@
         .modal-title { font-size: 1rem; font-weight: 600; }
         .modal-body { padding: 1.25rem; }
         .modal-dialog-scrollable .modal-content { overflow: visible; }
+        .modal-dialog {
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
         .font-thin { font-weight: 300 !important; }
         .font-extralight, .font-light { font-weight: 300 !important; }
         .font-normal { font-weight: 400 !important; }
@@ -584,7 +655,10 @@
         .font-bold { font-weight: 600 !important; }
         .font-extrabold, .font-black { font-weight: 700 !important; }
         body:has(#collectionDetailModal.show) .modal-backdrop,
-        body:has(#viewOnlyModal.show) .modal-backdrop {
+        body:has(#viewOnlyModal.show) .modal-backdrop,
+        body:has(#detailModal.show) .modal-backdrop,
+        body:has(#damageReportModal.show) .modal-backdrop,
+        body:has(#codModal.show) .modal-backdrop {
             display: none !important;
         }
         #collectionDetailModal .modal-content { box-shadow: none !important; }
@@ -936,3 +1010,97 @@
         .dropdown-menu-rider .notif-item .notif-title { font-size: 0.825rem; font-weight: 700; color: var(--rider-text); display: block; margin-bottom: 0.2rem; transition: color 0.2s; }
         .dropdown-menu-rider .notif-item:hover .notif-title { color: var(--rider-accent); }
         .dropdown-menu-rider .notif-item .notif-desc { font-size: 0.75rem; color: var(--rider-muted); display: block; }
+
+        /* ── Mobile layout ── */
+        .rider-main {
+            padding: 0.75rem 1rem 5.5rem;
+        }
+
+        @media (min-width: 768px) {
+            .rider-main {
+                padding: 1rem 1.25rem 2rem;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .rider-top-header {
+                padding-top: 0.85rem;
+                padding-bottom: 0.75rem;
+            }
+
+            .stat-card {
+                padding: 0.85rem 0.75rem;
+                border-radius: 14px;
+            }
+
+            .stat-card .stat-value {
+                font-size: 1.35rem;
+            }
+
+            .stat-card .stat-label {
+                font-size: 0.68rem;
+                line-height: 1.25;
+            }
+
+            .stat-card .stat-sub {
+                font-size: 0.6rem;
+                line-height: 1.3;
+            }
+
+            .stat-card .stat-icon {
+                width: 28px;
+                height: 28px;
+                font-size: 0.8rem;
+            }
+
+            .delivery-queue-card {
+                min-height: 140px;
+                padding: 1rem 1rem 1rem 1.1rem;
+            }
+
+            .delivery-queue-card .card-title {
+                font-size: 1.05rem;
+            }
+
+            .delivery-queue-card .card-subtitle {
+                font-size: 0.82rem;
+                margin-bottom: 0.85rem;
+            }
+
+            .delivery-queue-card .card-content {
+                max-width: 68%;
+            }
+
+            .delivery-queue-card .card-illustration {
+                width: 38%;
+            }
+
+            .section-heading {
+                font-size: 0.75rem;
+                margin-bottom: 0.65rem;
+            }
+
+            .delivery-card {
+                padding: 0.95rem;
+            }
+
+            .delivery-card .delivery-id {
+                font-size: 1rem;
+            }
+
+            #queueList,
+            .up-next-list {
+                max-height: none;
+                padding-right: 0;
+            }
+
+            .swal2-container {
+                padding: 0.75rem !important;
+            }
+
+            .swal2-popup {
+                width: calc(100vw - 1.5rem) !important;
+                max-width: 24rem !important;
+                font-size: 0.95rem !important;
+            }
+        }

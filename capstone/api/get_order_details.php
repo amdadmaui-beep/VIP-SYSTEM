@@ -14,8 +14,8 @@ if (session_status() === PHP_SESSION_NONE) {
 
 ob_start();
 try {
-    require_once '../includes/db.php';
-    require_once '../includes/roles_helper.php';
+    require_once __DIR__ . '/../includes/db.php';
+    require_once __DIR__ . '/../includes/roles_helper.php';
     $management_ids = getManagementRoleIds($conn);
     requireRole(empty($management_ids) ? [1] : $management_ids);
     ob_end_clean();

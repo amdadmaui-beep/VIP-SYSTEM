@@ -16,6 +16,7 @@ $productPickerData = array_map(function ($p) {
 
 $inventory_staff_config = [
     'adjustmentOtherReasonLabel' => $has_other_reason ? 'Other (with remarks)' : '',
+    'damageTypeReasons' => getDamageTypeOptions(),
     'flashSuccess' => $inv_staff_flash_success !== '' ? $inv_staff_flash_success : null,
     'flashSuccessDetails' => $inv_staff_flash_success_details,
     'flashError' => $inv_staff_flash_error !== '' ? $inv_staff_flash_error : null,

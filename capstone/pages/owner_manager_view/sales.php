@@ -924,23 +924,6 @@ $customers_result = $conn->query($customers_query);
             </div>
         </div>
 
-        <!-- Main Actions Bar -->
-        <div class="card" style="background: white; border-radius: 16px; padding: 1.25rem; margin-bottom: 1.5rem; border: 1px solid #e2e8f0; display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);">
-            <div style="font-weight: 700; color: #1e293b; display: flex; align-items: center; gap: 0.5rem; font-size: 0.95rem;">
-                <i class="fas fa-cash-register" style="color: #6366f1;"></i> Main Actions:
-            </div>
-            <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                <?php if (!$is_owner_view_only): ?>
-                <button onclick="showCreateWalkinSaleModal()" class="btn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; border-radius: 10px; font-weight: 600; padding: 0.625rem 1.25rem; font-size: 0.875rem; border: none; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);" onmouseover="this.style.transform='translateY(-1px)';" onmouseout="this.style.transform='translateY(0)';">
-                    <i class="fas fa-walking"></i> Record Walk-in Sale
-                </button>
-                <?php endif; ?>
-                <button onclick="showDeliveriesReadyModal()" class="btn" style="background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%); color: white; border-radius: 10px; font-weight: 600; padding: 0.625rem 1.25rem; font-size: 0.875rem; border: none; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);" onmouseover="this.style.transform='translateY(-1px)';" onmouseout="this.style.transform='translateY(0)';">
-                    <i class="fas fa-truck"></i> Deliveries Ready for Sale (<?= count($deliveries_list) ?>)
-                </button>
-            </div>
-        </div>
-
         <!-- Sales Report Export -->
             <div class="card">
                 <div class="card-header">

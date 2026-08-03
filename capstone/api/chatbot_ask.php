@@ -1,9 +1,15 @@
 <?php
 session_start();
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
 
 header('Content-Type: application/json');
+
+if (!defined('VIP_AI_ASSISTANT_ENABLED') || !VIP_AI_ASSISTANT_ENABLED) {
+    http_response_code(503);
+    echo json_encode(['success' => false, 'reply' => 'VIP AI Assistant is currently disabled.']);
+    exit();
+}
 
 if (!isset($_SESSION['user_id'])) {
     http_response_code(401);

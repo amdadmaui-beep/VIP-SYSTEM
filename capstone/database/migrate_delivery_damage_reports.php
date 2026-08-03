@@ -67,4 +67,33 @@ foreach ($fks as $i => $fkSql) {
     runSql($conn, $fkSql, 'FK ' . ($i + 1));
 }
 
+// Reviews table (3NF — separated from delivery_damage_report)
+$reviewsSql = <<<SQL
+CREATE TABLE IF NOT EXISTS damage_report_reviews (
+    review_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    report_id INT UNSIGNED NOT NULL,
+    status ENUM('pending_review', 'approved', 'rejected') DEFAULT 'pending_review',
+    reviewed_by INT UNSIGNED DEFAULT NULL,
+    reviewed_at DATETIME DEFAULT NULL,
+    staff_notes TEXT DEFAULT NULL,
+    Adjustment_ID INT UNSIGNED DEFAULT NULL,
+    Damage_ID INT UNSIGNED DEFAULT NULL,
+    UNIQUE KEY (report_id),
+    FOREIGN KEY (report_id) REFERENCES delivery_damage_report(report_id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL;
+runSql($conn, $reviewsSql, 'CREATE TABLE damage_report_reviews');
+
+try {
+    $revCols = $conn->query('SHOW COLUMNS FROM damage_report_reviews')->fetchAll(PDO::FETCH_COLUMN);
+    if (!in_array('Adjustment_ID', $revCols, true)) {
+        runSql($conn, 'ALTER TABLE damage_report_reviews ADD COLUMN Adjustment_ID INT UNSIGNED DEFAULT NULL', 'ADD Adjustment_ID');
+    }
+    if (!in_array('Damage_ID', $revCols, true)) {
+        runSql($conn, 'ALTER TABLE damage_report_reviews ADD COLUMN Damage_ID INT UNSIGNED DEFAULT NULL', 'ADD Damage_ID');
+    }
+} catch (Throwable $e) {
+    echo '[WARN] damage_report_reviews column check: ' . $e->getMessage() . "\n";
+}
+
 echo "\nDone.\n";

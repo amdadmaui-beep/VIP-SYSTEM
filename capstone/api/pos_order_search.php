@@ -1,9 +1,9 @@
 <?php
 header('Content-Type: application/json');
 session_start();
-require_once '../includes/auth.php';
-require_once '../includes/db.php';
-require_once '../includes/module_access.php';
+require_once __DIR__ . '/../includes/auth.php';
+require_once __DIR__ . '/../includes/db.php';
+require_once __DIR__ . '/../includes/module_access.php';
 
 // Accessible to Owner (1), Cashier (2), and Manager (4)
 if (!isset($_SESSION['user_role']) || !in_array((int)$_SESSION['user_role'], [1, 2, 3])) {

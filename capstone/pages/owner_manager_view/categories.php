@@ -2,6 +2,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/auth.php';
 require_once __DIR__ . '/../../includes/db.php';
+require_once __DIR__ . '/../../includes/csrf.php';
 
 requireRole([1, 2, 4]);
 
@@ -11,8 +12,13 @@ unset($_SESSION['categories_success']);
 $errors = $_SESSION['categories_errors'] ?? [];
 unset($_SESSION['categories_errors']);
 
-// Handle Add Category
+// Handle Add/Edit Category
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if (!validateCsrfToken(false)) {
+        $_SESSION['categories_errors'] = ['Invalid or expired security token.'];
+        header('Location: categories.php');
+        exit;
+    }
     if ($_POST['action'] === 'add') {
         $category_name = trim($_POST['category_name']);
         if (empty($category_name)) {
@@ -143,7 +149,7 @@ foreach ($products_by_cat as $prod) {
     }
     $products_by_category[$cid][] = $prod;
 }
-$products_json = json_encode($products_by_category);
+$products_json = json_encode($products_by_category, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -328,6 +334,176 @@ $products_json = json_encode($products_by_category);
                 .scrollable-table-wrapper { max-height: 480px; overflow-y: auto; overflow-x: auto; border-radius: 12px; }
                 .scrollable-table-wrapper table thead { position: sticky; top: 0; background: white; z-index: 1; }
                 .scrollable-table-wrapper table thead::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; border-bottom: 2px solid #f1f5f9; }
+                .category-cards-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+                    gap: 1rem;
+                }
+                .category-card {
+                    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 1.25rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+                }
+                .category-card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.1);
+                    border-color: #c7d2fe;
+                }
+                .category-card-top {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 0.75rem;
+                }
+                .category-card-name {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.65rem;
+                    min-width: 0;
+                }
+                .category-card-icon {
+                    width: 42px;
+                    height: 42px;
+                    border-radius: 12px;
+                    background: #eef2ff;
+                    color: #6366f1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1rem;
+                    flex-shrink: 0;
+                }
+                .category-card-title {
+                    margin: 0;
+                    font-size: 1rem;
+                    font-weight: 700;
+                    color: #1e293b;
+                    line-height: 1.3;
+                    word-break: break-word;
+                }
+                .category-card-meta {
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    color: #64748b;
+                    margin-top: 0.15rem;
+                }
+                .category-card-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5rem;
+                    padding-top: 0.85rem;
+                    border-top: 1px solid #f1f5f9;
+                }
+                .category-card-actions .action-btns {
+                    width: 100%;
+                    flex-wrap: wrap;
+                }
+                .category-card-actions .action-btns button {
+                    flex: 1 1 auto;
+                    min-width: 5.5rem;
+                    justify-content: center;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                }
+                @media (max-width: 640px) {
+                    .category-cards-grid {
+                        grid-template-columns: 1fr;
+                    }
+                }
+                .category-cards-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+                    gap: 1rem;
+                }
+                .category-card {
+                    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+                    border: 1px solid #e2e8f0;
+                    border-radius: 16px;
+                    padding: 1.25rem;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+                }
+                .category-card:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 12px 28px rgba(99, 102, 241, 0.1);
+                    border-color: #c7d2fe;
+                }
+                .category-card-top {
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 0.75rem;
+                }
+                .category-card-name {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.65rem;
+                    min-width: 0;
+                    font-size: 1rem;
+                    font-weight: 700;
+                    color: #1e293b;
+                    line-height: 1.3;
+                }
+                .category-card-name i {
+                    flex-shrink: 0;
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 10px;
+                    background: #eef2ff;
+                    color: #6366f1;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.9rem;
+                }
+                .category-card-name span {
+                    word-break: break-word;
+                }
+                .category-card-count {
+                    flex-shrink: 0;
+                    text-align: center;
+                }
+                .category-card-count .badge-count {
+                    font-size: 0.85rem;
+                    padding: 0.35rem 0.75rem;
+                    min-width: 2rem;
+                }
+                .category-card-count-label {
+                    display: block;
+                    font-size: 0.65rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    color: #94a3b8;
+                    margin-top: 0.25rem;
+                }
+                .category-card-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.5rem;
+                    padding-top: 0.75rem;
+                    border-top: 1px solid #f1f5f9;
+                }
+                .category-card-actions button {
+                    flex: 1 1 auto;
+                    min-width: 0;
+                    justify-content: center;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                }
+                @media (max-width: 480px) {
+                    .category-cards-grid { grid-template-columns: 1fr; }
+                    .category-card-actions button { flex: 1 1 calc(50% - 0.25rem); }
+                }
             </style>
 
             <div class="premium-page-banner">
@@ -421,46 +597,40 @@ $products_json = json_encode($products_by_category);
                     <h3><i class="fas fa-list"></i> Active Categories</h3>
                 </div>
                 <?php if (count($active_categories) > 0): ?>
-                <div class="table-responsive">
-                    <div class="scrollable-table-wrapper">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 2px solid #f1f5f9;">
-                                <th style="padding: 1rem; text-align: left; font-size: 0.85rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Category Name</th>
-                                <th style="padding: 1rem; text-align: center; font-size: 0.85rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Products</th>
-                                <th style="padding: 1rem; text-align: right; font-size: 0.85rem; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($active_categories as $cat): ?>
-                            <tr style="border-bottom: 1px solid #f1f5f9;">
-                                <td style="padding: 1rem; font-weight: 600; color: #1e293b;">
-                                    <i class="fas fa-tag" style="color: #6366f1; margin-right: 0.5rem;"></i>
-                                    <?php echo htmlspecialchars($cat['category_name']); ?>
-                                </td>
-                                <td style="padding: 1rem; text-align: center;">
-                                    <span class="badge-count"><?php echo intval($cat['product_count']); ?></span>
-                                </td>
-                                <td style="padding: 1rem; text-align: right;">
-                                    <div class="action-btns" style="justify-content: flex-end;">
-                                        <?php if (intval($cat['product_count']) > 0): ?>
-                                        <button class="btn-view-cat" onclick="viewCategoryProducts(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
-                                            <i class="fas fa-eye"></i> View
-                                        </button>
-                                        <?php endif; ?>
-                                        <button class="btn-edit-cat" onclick="editCategory(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
-                                            <i class="fas fa-edit"></i> Edit
-                                        </button>
-                                        <button class="btn-delete-cat" onclick="deleteCategory(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
-                                            <i class="fas fa-trash"></i> Delete
-                                        </button>
-                                    </div>
-                                </td>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    </div>
+                <div class="category-cards-grid">
+                    <?php foreach ($active_categories as $cat): ?>
+                    <article class="category-card">
+                        <div class="category-card-top">
+                            <div class="category-card-name">
+                                <div class="category-card-icon">
+                                    <i class="fas fa-tag"></i>
+                                </div>
+                                <div>
+                                    <h4 class="category-card-title"><?php echo htmlspecialchars($cat['category_name']); ?></h4>
+                                    <p class="category-card-meta">
+                                        <?php echo intval($cat['product_count']); ?> product<?php echo intval($cat['product_count']) === 1 ? '' : 's'; ?>
+                                    </p>
+                                </div>
+                            </div>
+                            <span class="badge-count"><?php echo intval($cat['product_count']); ?></span>
+                        </div>
+                        <div class="category-card-actions">
+                            <div class="action-btns">
+                                <?php if (intval($cat['product_count']) > 0): ?>
+                                <button class="btn-view-cat" onclick="viewCategoryProducts(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
+                                    <i class="fas fa-eye"></i> View
+                                </button>
+                                <?php endif; ?>
+                                <button class="btn-edit-cat" onclick="editCategory(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
+                                    <i class="fas fa-edit"></i> Edit
+                                </button>
+                                <button class="btn-delete-cat" onclick="deleteCategory(<?php echo intval($cat['category_id']); ?>, '<?php echo htmlspecialchars($cat['category_name'], ENT_QUOTES); ?>')">
+                                    <i class="fas fa-trash"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                    </article>
+                    <?php endforeach; ?>
                 </div>
                 <?php else: ?>
                 <div style="text-align: center; padding: 3rem 1rem; color: #64748b;">
@@ -486,6 +656,7 @@ $products_json = json_encode($products_by_category);
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="add">
+            <?php echo csrfTokenField(); ?>
             <div class="form-group" style="margin-bottom: 1.5rem;">
                 <label for="category_name">Category Name *</label>
                 <input type="text" id="category_name" name="category_name" class="form-input" required placeholder="e.g. Ice Cubes">
@@ -510,6 +681,7 @@ $products_json = json_encode($products_by_category);
         </div>
         <form method="POST">
             <input type="hidden" name="action" value="edit">
+            <?php echo csrfTokenField(); ?>
             <input type="hidden" name="category_id" id="edit_category_id">
             <div class="form-group" style="margin-bottom: 1.5rem;">
                 <label for="edit_category_name">Category Name *</label>
@@ -526,12 +698,14 @@ $products_json = json_encode($products_by_category);
 <!-- Delete Category Form -->
 <form id="deleteCategoryForm" method="POST" style="display: none;">
     <input type="hidden" name="action" value="delete">
+    <?php echo csrfTokenField(); ?>
     <input type="hidden" name="category_id" id="delete_category_id">
 </form>
 
 <!-- Restore Category Form -->
 <form id="restoreCategoryForm" method="POST" style="display: none;">
     <input type="hidden" name="action" value="restore">
+    <?php echo csrfTokenField(); ?>
     <input type="hidden" name="category_id" id="restore_category_id">
 </form>
 

@@ -199,7 +199,7 @@ $pending_count = $total_pending;
     <?php if (!$has_table): ?>
         <div class="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
             The <code class="text-xs bg-slate-100 px-1 rounded">delivery_damage_report</code> table is not installed. Run
-            <code class="text-xs bg-slate-100 px-1 rounded">php database/migrate_delivery_damage_report.php</code> from the capstone folder.
+            <code class="text-xs bg-slate-100 px-1 rounded">php database/migrate_delivery_damage_reports.php</code> from the capstone folder.
         </div>
     <?php else: ?>
         <div class="mb-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-blue-50 border border-blue-100 p-4 flex items-center justify-between gap-3 shadow-sm animate-fade-in-up">

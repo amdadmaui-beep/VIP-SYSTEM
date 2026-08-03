@@ -1,4 +1,4 @@
-<body class="text-slate-800 antialiased max-w-lg mx-auto relative shadow-xl min-h-screen bg-white md:bg-slate-50">
+<body class="text-slate-800 antialiased max-w-lg mx-auto relative shadow-xl min-h-screen bg-white md:bg-slate-50 overflow-x-hidden">
 
     <!-- Sticky Header -->
     <header class="glass-header sticky top-0 z-40 px-5 pt-6 pb-4 border-b border-slate-100 shadow-sm">

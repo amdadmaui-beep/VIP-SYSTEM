@@ -22,9 +22,11 @@ require_once __DIR__ . '/../includes/auth.php';
 require_once __DIR__ . '/../includes/db.php';
 require_once __DIR__ . '/../includes/logger.php';
 require_once __DIR__ . '/../includes/mailer.php';
+require_once __DIR__ . '/../includes/ar_reminder_helper.php';
 require_once __DIR__ . '/../includes/sms.php';
 require_once __DIR__ . '/../includes/module_access.php';
 require_once __DIR__ . '/../includes/cash_session_helper.php';
+require_once __DIR__ . '/../includes/cache.php';
 require_once __DIR__ . '/../includes/csrf.php'; // CSRF Protection - Security Fix
 
 // Accessible to Owner (1), Manager (2/4), and Cashier (3)
@@ -292,7 +294,7 @@ function createAR($conn, $user_id) {
     }
 
     // Check Credit Limit and get aging_days
-    $credit_query = $conn->prepare("SELECT credit_limit, customer_name, aging_days FROM customers WHERE Customer_ID = ?");
+    $credit_query = $conn->prepare("SELECT credit_limit, customer_name, aging_days, email FROM customers WHERE Customer_ID = ?");
     $credit_query->execute([$customer_id]);
     $customer_data = $credit_query->fetch();
     $credit_limit = floatval($customer_data['credit_limit'] ?? 0);
@@ -317,39 +319,24 @@ function createAR($conn, $user_id) {
         $total_outstanding += floatval($row['amount_due']);
     }
 
-    // Combined enforcement: zero-balance rule + credit cap
-    // Zero-balance rule: any existing unpaid balance blocks new AR
-    if ($total_outstanding > 0) {
-        logActivity('AR', "Zero-balance rule blocked AR for customer {$customer_name} (ID: {$customer_id}). " .
-            "Outstanding: {$total_outstanding}, Attempted: {$amount_due}", $customer_id);
-        
-        echo json_encode([
-            'success' => false,
-            'error' => 'Customer has an outstanding balance of ₱' . number_format($total_outstanding, 2) . '. Please settle payment before creating a new AR record.',
-            'details' => [
-                'current_outstanding' => $total_outstanding,
-                'new_ar_amount' => $amount_due,
-                'outstanding_invoices' => $outstanding_invoices
-            ],
-            'recommendation' => 'Full payment of the outstanding balance is required before creating new AR.'
-        ]);
-        return;
-    }
-    
-    // Credit cap rule: new AR amount cannot exceed credit limit
-    if ($credit_limit > 0 && $amount_due > $credit_limit) {
+    // Combined credit check: allow AR as long as total outstanding + new AR doesn't exceed credit limit
+    $total_after_ar = $total_outstanding + $amount_due;
+    if ($credit_limit > 0 && $total_after_ar > $credit_limit) {
         logActivity('AR', "Credit cap blocked AR for customer {$customer_name} (ID: {$customer_id}). " .
-            "Limit: {$credit_limit}, Attempted AR: {$amount_due}", $customer_id);
+            "Outstanding: {$total_outstanding}, Limit: {$credit_limit}, Attempted AR: {$amount_due}", $customer_id);
         
         echo json_encode([
             'success' => false,
-            'error' => 'Amount due (₱' . number_format($amount_due, 2) . ') exceeds credit limit (₱' . number_format($credit_limit, 2) . ').',
+            'error' => 'Adding this AR (₱' . number_format($amount_due, 2) . ') would bring the total to ₱' . number_format($total_after_ar, 2) . ', exceeding the credit limit of ₱' . number_format($credit_limit, 2) . '.',
             'details' => [
                 'credit_limit' => $credit_limit,
+                'current_outstanding' => $total_outstanding,
                 'new_ar_amount' => $amount_due,
-                'excess_amount' => $amount_due - $credit_limit,
+                'total_after_ar' => $total_after_ar,
+                'excess_amount' => $total_after_ar - $credit_limit,
+                'outstanding_invoices' => $outstanding_invoices
             ],
-            'recommendation' => 'Reduce the amount due to stay within the credit limit of ₱' . number_format($credit_limit, 2) . '.'
+            'recommendation' => 'Reduce the AR amount so that total outstanding (₱' . number_format($total_outstanding, 2) . ') + new AR stays within the credit limit of ₱' . number_format($credit_limit, 2) . '.'
         ]);
         return;
     }
@@ -370,10 +357,30 @@ function createAR($conn, $user_id) {
         $opening_balance, $amount_due, $due_date, $status])) {
         $ar_id = (int) $conn->lastInsertId();
         logActivity('AR', "Created AR record for customer ID: $customer_id, Invoice: " . number_format($invoice_amount, 2), $ar_id);
-        
+
+        $email_sent = false;
+        $customer_email = trim((string)($customer_data['email'] ?? ''));
+        if ($customer_email !== '' && filter_var($customer_email, FILTER_VALIDATE_EMAIL)) {
+            try {
+                $mailResult = sendARCreatedEmail(
+                    $customer_email,
+                    $customer_name,
+                    $ar_id,
+                    $invoice_amount,
+                    $amount_due,
+                    $due_date,
+                    $sale_id
+                );
+                $email_sent = $mailResult['ok'] ?? false;
+            } catch (Throwable $e) {
+                error_log('AR create email failed: ' . $e->getMessage());
+            }
+        }
+
         echo json_encode([
             'success' => true,
             'ar_id' => $ar_id,
+            'email_sent' => $email_sent,
             'message' => 'AR record created successfully'
         ]);
     } else {
@@ -454,17 +461,17 @@ function recordPayment($conn, $user_id) {
         $applications = [];
         
         if ($ar_id > 0) {
-            $ar_query = $conn->prepare("SELECT AR_ID, amount_due, invoice_amount 
+            $ar_query = $conn->prepare("SELECT AR_ID, amount_due, invoice_amount, invoice_date, due_date, 0 AS sort_order
                 FROM account_receivable 
-                WHERE AR_ID = ? AND Customer_ID = ? AND amount_due > 0
+                WHERE AR_ID = ? AND Customer_ID = ? AND amount_due > 0 AND status NOT IN ('Paid', 'Closed')
                 UNION
-                SELECT AR_ID, amount_due, invoice_amount 
+                SELECT AR_ID, amount_due, invoice_amount, invoice_date, due_date, 1 AS sort_order
                 FROM account_receivable 
-                WHERE Customer_ID = ? AND amount_due > 0 AND AR_ID != ?
-                ORDER BY AR_ID ASC");
+                WHERE Customer_ID = ? AND amount_due > 0 AND status NOT IN ('Paid', 'Closed') AND AR_ID != ?
+                ORDER BY sort_order ASC, invoice_date ASC, AR_ID ASC");
             $ar_query->execute([$ar_id, $customer_id, $customer_id, $ar_id]);
         } else {
-            $ar_query = $conn->prepare("SELECT AR_ID, amount_due, invoice_amount 
+            $ar_query = $conn->prepare("SELECT AR_ID, amount_due, invoice_amount, invoice_date, due_date
                 FROM account_receivable 
                 WHERE Customer_ID = ? AND amount_due > 0 AND status NOT IN ('Paid', 'Closed')
                 ORDER BY invoice_date ASC, AR_ID ASC");
@@ -508,16 +515,33 @@ function recordPayment($conn, $user_id) {
             $link_stmt->execute([$current_ar_id, $payment_id]);
             
             $new_status = $new_balance <= 0 ? 'Paid' : 'Partial';
-            $update_stmt = $conn->prepare("UPDATE account_receivable 
-                SET amount_due = ?, status = ?, updated_at = NOW()
-                WHERE AR_ID = ?");
-            $update_stmt->execute([$new_balance, $new_status, $current_ar_id]);
+            $extended_due_date = null;
+            if ($new_balance > 0) {
+                $payment_ts = strtotime($payment_date) ?: time();
+                $current_due_ts = strtotime((string)($ar['due_date'] ?? '')) ?: $payment_ts;
+                $base_due_ts = max($payment_ts, $current_due_ts);
+                $extended_due_date = date('Y-m-d', strtotime('+7 days', $base_due_ts));
+            }
+
+            if ($extended_due_date !== null) {
+                $update_stmt = $conn->prepare("UPDATE account_receivable
+                    SET amount_due = ?, status = ?, due_date = ?, updated_at = NOW()
+                    WHERE AR_ID = ?");
+                $update_stmt->execute([$new_balance, $new_status, $extended_due_date, $current_ar_id]);
+            } else {
+                $update_stmt = $conn->prepare("UPDATE account_receivable
+                    SET amount_due = ?, status = ?, updated_at = NOW()
+                    WHERE AR_ID = ?");
+                $update_stmt->execute([$new_balance, $new_status, $current_ar_id]);
+            }
             
             $applications[] = [
                 'ar_id' => $current_ar_id,
                 'applied' => $apply_amount,
                 'new_balance' => $new_balance,
-                'status' => $new_status
+                'status' => $new_status,
+                'new_due_date' => $extended_due_date,
+                'due_date_extended' => $extended_due_date !== null
             ];
         }
         
@@ -528,11 +552,56 @@ function recordPayment($conn, $user_id) {
 
         logActivity('AR', "Recorded payment of " . number_format($amount_paid, 2) . " for customer ID: $customer_id", $customer_id);
 
+        $email_sent = false;
+        $cust_stmt = $conn->prepare("SELECT customer_name, email FROM customers WHERE Customer_ID = ?");
+        $cust_stmt->execute([$customer_id]);
+        $cust_row = $cust_stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+        $customer_email = trim((string)($cust_row['email'] ?? ''));
+        $customer_name = trim((string)($cust_row['customer_name'] ?? 'Customer'));
+
+        if ($customer_email !== '' && filter_var($customer_email, FILTER_VALIDATE_EMAIL) && !empty($applications)) {
+            try {
+                $primary = $applications[0];
+                foreach ($applications as $app) {
+                    if ($ar_id > 0 && (int)$app['ar_id'] === $ar_id) {
+                        $primary = $app;
+                        break;
+                    }
+                }
+                $primary_ar_id = (int)($primary['ar_id'] ?? 0);
+                $applied_amount = (float)($primary['applied'] ?? $amount_paid);
+                $remaining_balance = (float)($primary['new_balance'] ?? 0);
+                $fully_paid = ($primary['status'] ?? '') === 'Paid' || $remaining_balance <= 0;
+
+                $invoice_amount = 0.0;
+                if ($primary_ar_id > 0) {
+                    $inv_stmt = $conn->prepare("SELECT invoice_amount FROM account_receivable WHERE AR_ID = ?");
+                    $inv_stmt->execute([$primary_ar_id]);
+                    $invoice_amount = (float)($inv_stmt->fetchColumn() ?: 0);
+                }
+
+                $mailResult = sendARPaymentEmail(
+                    $customer_email,
+                    $customer_name,
+                    $primary_ar_id,
+                    $applied_amount,
+                    $remaining_balance,
+                    $fully_paid,
+                    $invoice_amount,
+                    $primary['new_due_date'] ?? null
+                );
+                $email_sent = $mailResult['ok'] ?? false;
+            } catch (Throwable $e) {
+                error_log('AR payment email failed: ' . $e->getMessage());
+            }
+        }
+
         echo json_encode([
             'success' => true,
             'amount_paid' => $amount_paid,
             'applications' => $applications,
             'credit_balance' => $credit_balance,
+            'email_sent' => $email_sent,
             'message' => 'Payment recorded and applied successfully'
         ]);
         
@@ -967,18 +1036,15 @@ function sendARReminderEmail($conn, $user_id) {
 
     // Persist reminder timestamp for AR badge display.
     try {
-        $conn->exec("
-            CREATE TABLE IF NOT EXISTS ar_email_reminders (
-                reminder_id INT AUTO_INCREMENT PRIMARY KEY,
-                AR_ID INT NOT NULL,
-                customer_email VARCHAR(191) NOT NULL,
-                sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                sent_by INT NULL,
-                INDEX idx_ar_sent_at (AR_ID, sent_at)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        ");
-        $ins = $conn->prepare("INSERT INTO ar_email_reminders (AR_ID, customer_email, sent_by) VALUES (?, ?, ?)");
-        $ins->execute([$ar_id, $email, $user_id]);
+        arReminderRecordEmail(
+            $conn,
+            $ar_id,
+            $email,
+            'manual',
+            (string)$row['due_date'],
+            (float)$row['amount_due'],
+            (int)$user_id
+        );
     } catch (Throwable $e) {
         // Non-blocking: reminder email already sent.
     }

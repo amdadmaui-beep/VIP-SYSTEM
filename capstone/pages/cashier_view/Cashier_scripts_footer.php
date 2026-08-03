@@ -215,9 +215,6 @@
                                             <i class="fas fa-user-edit"></i> Customer
                                         </button>
                                     `}
-                                    ${sale.status !== 'Voided' ? `<button class="btn-mgmt-void" onclick="voidSale(${sale.Sale_ID})" title="Void Sale" style="background:#fee2e2;color:#dc2626;border-color:#fecaca;">
-                                        <i class="fas fa-ban"></i>
-                                    </button>` : ''}
                                 </td>
                             </tr>
                         `;

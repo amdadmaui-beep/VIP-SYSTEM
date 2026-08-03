@@ -1,5 +1,5 @@
 <?php if (!empty($has_delivery_damage_reports)): ?>
-<div id="tab-damage-reports" class="tab-content staggered-group" style="display:none;">
+<div id="tab-damage-reports" class="tab-content staggered-group" style="display:<?= $activeTab === 'damage-reports' ? 'block' : 'none' ?>">
     <div class="row g-2 mb-4 staggered-group">
         <div class="col-6">
             <div class="stat-card bg-blue shadow-lg">

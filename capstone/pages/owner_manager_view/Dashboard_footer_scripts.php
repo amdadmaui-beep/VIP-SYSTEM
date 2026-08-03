@@ -1,3 +1,4 @@
+    <?php if (defined('VIP_AI_ASSISTANT_ENABLED') && VIP_AI_ASSISTANT_ENABLED): ?>
     <script>
     (function() {
         let systemBrain = null;
@@ -135,6 +136,7 @@
         });
     })();
     </script>
+    <?php endif; ?>
     <script>
     // ================================================================
     // ANTIGRAVITY INTERACTIVITY ENGINE

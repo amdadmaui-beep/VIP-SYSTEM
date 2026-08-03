@@ -43,13 +43,15 @@ if ($has_table) {
 }
 
 $pending_count = count($pending);
+$staff_damage_reports = fetchStaffDamageReportsForManager($conn, 50);
+$staff_damage_count = count($staff_damage_reports);
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Delivery damage queue - VIP Villanueva Ice Plant</title>
+    <title>Damage Reports - VIP Villanueva Ice Plant</title>
     <!-- Fonts & Icons -->
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha384-t1nt8BQoYMLFN5p42tRAtuAAFQaCQODekUVeKKZrEnEyp4H2R0RHFz0KWpmj7i8g" crossorigin="anonymous">
@@ -144,9 +146,9 @@ $pending_count = count($pending);
                         <div class="p-3 bg-white/20 backdrop-blur-md rounded-2xl">
                             <i data-lucide="clipboard-check" class="w-8 h-8 text-white"></i>
                         </div>
-                        <h1 class="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Delivery damage queue</h1>
+                        <h1 class="text-3xl lg:text-4xl font-extrabold text-white tracking-tight">Damage Reports</h1>
                     </div>
-                    <p class="text-white/90 text-lg max-w-2xl font-medium leading-relaxed">Review rider-submitted damage reports before inventory is adjusted. Ensure all claims are valid before approval.</p>
+                    <p class="text-white/90 text-lg max-w-2xl font-medium leading-relaxed">Review rider delivery damage (approve or reject) and view inventory staff damage photo evidence.</p>
                 </div>
                 <!-- Decorative Elements -->
                 <div class="absolute -right-20 -top-20 w-80 h-80 bg-white/10 rounded-full blur-3xl"></div>
@@ -155,24 +157,17 @@ $pending_count = count($pending);
         </section>
 
         <?php if (!$has_table): ?>
-            <div class="glass-card rounded-3xl p-10 text-center max-w-2xl mx-auto animate-slide-up">
-                <div class="mb-6 inline-flex p-4 bg-amber-100 rounded-full text-amber-600">
-                    <i data-lucide="alert-triangle" class="w-12 h-12"></i>
-                </div>
-                <h2 class="text-2xl font-bold mb-4">Table Not Found</h2>
-                <p class="text-slate-600 mb-8">The <code>delivery_damage_report</code> table is not installed. Please run the migration script to enable this feature.</p>
-                <div class="bg-slate-100 p-4 rounded-xl font-mono text-sm inline-block">
-                    php database/migrate_delivery_damage_reports.php
-                </div>
+            <div class="glass-card rounded-3xl p-6 mb-10 border border-amber-200 bg-amber-50/50">
+                <p class="text-amber-900 font-semibold text-sm"><i class="fas fa-exclamation-triangle mr-2"></i>Rider delivery damage is unavailable — run <code class="text-xs bg-white px-1 rounded">php database/migrate_delivery_damage_reports.php</code>. Staff damage reports below still work.</p>
             </div>
         <?php else: ?>
             
             <!-- Stats Overview -->
-            <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+            <section class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10">
                 <div class="glass-card rounded-3xl p-6 hover:translate-y-[-4px] transition-all duration-300 stagger-item shadow-indigo-100/50">
                     <div class="flex items-center justify-between">
                         <div>
-                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Pending review</p>
+                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Rider — pending review</p>
                             <h3 class="text-3xl font-black text-slate-800"><?php echo (int)$pending_count; ?></h3>
                         </div>
                         <div class="p-4 bg-orange-100 rounded-2xl text-orange-600">
@@ -180,16 +175,29 @@ $pending_count = count($pending);
                         </div>
                     </div>
                 </div>
-                <!-- Add more stat cards here if needed -->
+                <div class="glass-card rounded-3xl p-6 hover:translate-y-[-4px] transition-all duration-300 stagger-item shadow-violet-100/50">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p class="text-slate-500 text-sm font-bold uppercase tracking-wider mb-1">Staff damage reports</p>
+                            <h3 class="text-3xl font-black text-slate-800"><?php echo (int)$staff_damage_count; ?></h3>
+                        </div>
+                        <div class="p-4 bg-violet-100 rounded-2xl text-violet-600">
+                            <i data-lucide="camera" class="w-6 h-6"></i>
+                        </div>
+                    </div>
+                </div>
             </section>
 
-            <!-- Reports Table Section -->
-            <section class="glass-card rounded-3xl overflow-hidden shadow-2xl shadow-indigo-100/50 stagger-item">
+            <!-- Rider delivery damage -->
+            <section class="glass-card rounded-3xl overflow-hidden shadow-2xl shadow-indigo-100/50 stagger-item mb-10">
                 <div class="p-6 border-b border-slate-100 bg-white/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <h2 class="text-xl font-bold flex items-center gap-2">
-                        <i data-lucide="list" class="w-5 h-5 text-indigo-500"></i>
-                        Recent Submissions
-                    </h2>
+                    <div>
+                        <h2 class="text-xl font-bold flex items-center gap-2">
+                            <i data-lucide="truck" class="w-5 h-5 text-indigo-500"></i>
+                            Rider Delivery Damage
+                        </h2>
+                        <p class="text-sm text-slate-500 mt-1">Approve or reject to adjust inventory.</p>
+                    </div>
                     <div class="flex items-center gap-2">
                         <span class="px-3 py-1 bg-indigo-50 text-indigo-600 text-xs font-bold rounded-full border border-indigo-100">
                             <?php echo (int)$pending_count; ?> Items Pending
@@ -284,6 +292,73 @@ $pending_count = count($pending);
                 </div>
             </section>
         <?php endif; ?>
+
+        <!-- Staff damage reports (view photo only) -->
+        <section class="glass-card rounded-3xl overflow-hidden shadow-2xl shadow-violet-100/50 stagger-item mt-10">
+            <div class="p-6 border-b border-slate-100 bg-white/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h2 class="text-xl font-bold flex items-center gap-2">
+                        <i data-lucide="warehouse" class="w-5 h-5 text-violet-500"></i>
+                        Staff Damage Reports
+                    </h2>
+                    <p class="text-sm text-slate-500 mt-1">Inventory staff damage from manual adjustment — photo evidence for review only.</p>
+                </div>
+                <span class="px-3 py-1 bg-violet-50 text-violet-600 text-xs font-bold rounded-full border border-violet-100">
+                    <?php echo (int)$staff_damage_count; ?> Report<?php echo $staff_damage_count === 1 ? '' : 's'; ?>
+                </span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="premium-table w-full">
+                    <thead>
+                        <tr>
+                            <th>Reported</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Damage Type</th>
+                            <th>Reported By</th>
+                            <th>Photo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (empty($staff_damage_reports)): ?>
+                            <tr>
+                                <td colspan="6" class="py-16 text-center">
+                                    <div class="flex flex-col items-center">
+                                        <div class="p-4 bg-slate-50 rounded-full text-slate-300 mb-4">
+                                            <i data-lucide="image-off" class="w-10 h-10"></i>
+                                        </div>
+                                        <p class="text-slate-400 font-medium">No inventory staff damage reports yet.</p>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php else: ?>
+                            <?php foreach ($staff_damage_reports as $srow): ?>
+                                <tr class="hover:bg-violet-50/30">
+                                    <td class="font-medium"><?php echo date('M j, Y', strtotime($srow['created_at'])); ?><br><span class="text-slate-400 text-xs"><?php echo date('g:i A', strtotime($srow['created_at'])); ?></span></td>
+                                    <td class="font-bold text-slate-800"><?php echo htmlspecialchars($srow['product_name']); ?></td>
+                                    <td>
+                                        <span class="px-2.5 py-1 bg-red-50 text-red-600 rounded-lg font-black text-sm border border-red-100">
+                                            <?php echo number_format((float)$srow['quantity'], 0); ?>
+                                        </span>
+                                    </td>
+                                    <td class="text-slate-600 font-medium"><?php echo htmlspecialchars($srow['damage_type']); ?></td>
+                                    <td class="font-semibold text-slate-700"><?php echo htmlspecialchars($srow['reported_by_name'] ?: $srow['reported_by_username']); ?></td>
+                                    <td>
+                                        <?php if (!empty($srow['photo_path'])): ?>
+                                            <button type="button" onclick="showPhotoModal('<?php echo addslashes('../' . trim(explode(',', (string)$srow['photo_path'])[0])); ?>')" class="table-action-btn table-action-btn-label table-action-btn-view">
+                                                <i data-lucide="image"></i> View Photo
+                                            </button>
+                                        <?php else: ?>
+                                            <span class="text-slate-300 text-xs italic">No photo</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </main>
 </div>
 

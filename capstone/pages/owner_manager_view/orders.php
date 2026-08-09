@@ -109,8 +109,9 @@ $status_filter = $_GET['status'] ?? 'active';
 $status_where = '';
 
 // Get order statistics
-$order_stats = ['total' => 0, 'active' => 0, 'pending' => 0, 'scheduled' => 0, 'completed' => 0, 'cancelled' => 0];
+$order_stats = ['total' => 0, 'active' => 0, 'pending' => 0, 'scheduled' => 0, 'completed' => 0, 'cancelled' => 0, 'pickup' => 0, 'delivery' => 0];
 try {
+    $pickup_stat_expr = !empty($orders_col['order_type']) ? ", SUM(CASE WHEN o.order_type = 'pickup' THEN 1 ELSE 0 END) as pickup, SUM(CASE WHEN o.order_type = 'delivery' THEN 1 ELSE 0 END) as delivery" : ", 0 AS pickup, 0 AS delivery";
     $stats_query = "SELECT 
         COUNT(*) as total,
         SUM(CASE WHEN LOWER(o.{$order_status_col}) NOT IN ('completed','cancelled','delivered (pending cash turnover)') THEN 1 ELSE 0 END) as active,
@@ -118,6 +119,7 @@ try {
         SUM(CASE WHEN o.{$order_status_col} = 'Scheduled for Delivery' THEN 1 ELSE 0 END) as scheduled,
         SUM(CASE WHEN o.{$order_status_col} = 'Completed' THEN 1 ELSE 0 END) as completed,
         SUM(CASE WHEN LOWER(o.{$order_status_col}) = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+        $pickup_stat_expr
     FROM orders o";
     $stats_result = $conn->query($stats_query);
     if ($stats_result) {
@@ -182,6 +184,13 @@ if (!empty($status_filter) && $status_filter !== 'all') {
     $status_where = "";
 }
 
+// Fulfillment type filter (pickup | delivery)
+$type_filter = (string)($_GET['type'] ?? '');
+if (($type_filter === 'pickup' || $type_filter === 'delivery') && !empty($orders_col['order_type'])) {
+    $status_where = "WHERE o.order_type = ?";
+    $status_params = [$type_filter];
+}
+
 // Search by Order ID (overrides status filter so any order can be found)
 $search_id = intval($_GET['search_id'] ?? 0);
 if ($search_id > 0) {
@@ -218,6 +227,7 @@ $orders_query = "SELECT
     o.order_date,
     o.{$order_status_col} as order_status,
     o.total_amount,
+    o.order_type,
     o.remarks,
     {$order_created_expr} as created_at,
     COALESCE({$addr_o_expr}, NULLIF(TRIM(d.delivery_address), ''), c.address) AS list_delivery_address,
@@ -276,7 +286,7 @@ if (!$orders_result) {
         /* Order Stats Cards */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(5, 1fr);
             gap: 1rem;
             margin-bottom: 1.5rem;
         }
@@ -715,6 +725,26 @@ if (!$orders_result) {
                     <p><?php echo $order_stats['cancelled'] ?? 0; ?></p>
                 </div>
             </a>
+            <?php if (!empty($orders_col['order_type'])): ?>
+            <a href="orders.php?type=pickup" class="stat-card <?php echo $type_filter === 'pickup' ? 'active' : ''; ?>">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #10b981 0%, #047857 100%); color: white; box-shadow: 0 8px 20px rgba(16,185,129,0.3);">
+                    <i class="fas fa-shopping-basket"></i>
+                </div>
+                <div class="stat-content">
+                    <h4>Pickup</h4>
+                    <p><?php echo $order_stats['pickup'] ?? 0; ?></p>
+                </div>
+            </a>
+            <a href="orders.php?type=delivery" class="stat-card <?php echo $type_filter === 'delivery' ? 'active' : ''; ?>">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #f59e0b 0%, #b45309 100%); color: white; box-shadow: 0 8px 20px rgba(245,158,11,0.3);">
+                    <i class="fas fa-truck"></i>
+                </div>
+                <div class="stat-content">
+                    <h4>Delivery</h4>
+                    <p><?php echo $order_stats['delivery'] ?? 0; ?></p>
+                </div>
+            </a>
+            <?php endif; ?>
         </div>
 
         <!-- Order Deadline Notification Cards -->
@@ -804,7 +834,11 @@ if (!$orders_result) {
                                         }
                                     ?>
                                         <tr <?php echo $is_overdue ? 'style="background:#fef2f2;border-left:4px solid #dc2626;"' : ''; ?>>
-                                            <td><strong>#<?php echo $order['Order_ID']; ?></strong></td>
+                                            <td><strong>#<?php echo $order['Order_ID']; ?></strong>
+                                                <?php if ((string)($order['order_type'] ?? 'delivery') === 'pickup'): ?>
+                                                    <span style="display:inline-flex;align-items:center;gap:0.25rem;margin-left:0.375rem;font-size:0.6rem;font-weight:700;color:#047857;background:#d1fae5;padding:0.15rem 0.45rem;border-radius:4px;vertical-align:middle;"><i class="fas fa-shopping-basket"></i> PICKUP</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td>
                                                 <?php echo htmlspecialchars($order['customer_name']); ?><br>
                                                 <small style="color: #64748b;"><?php echo htmlspecialchars($order['phone_number']); ?></small>
@@ -896,6 +930,19 @@ if (!$orders_result) {
                                                                 class="table-action-btn table-action-btn-label table-action-btn-schedule mark-scheduled-btn" <?php echo !$is_schedule_ready ? 'disabled' : ''; ?>>
                                                                 <i class="fas fa-check-square"></i> Scheduled
                                                             </button>
+                                                            <?php
+                                                            $is_pickup = ((string)($order['order_type'] ?? 'delivery') === 'pickup');
+                                                            $has_delivery_row = !empty($order['Delivery_ID']);
+                                                            ?>
+                                                            <?php if ($is_pickup): ?>
+                                                                <button onclick="switchFulfillment(<?php echo $order['Order_ID']; ?>, 'delivery')" title="Change to Delivery" class="table-action-btn table-action-btn-label">
+                                                                    <i class="fas fa-truck"></i> To Delivery
+                                                                </button>
+                                                            <?php elseif (!$has_delivery_row): ?>
+                                                                <button onclick="switchFulfillment(<?php echo $order['Order_ID']; ?>, 'pickup')" title="Change to Pickup" class="table-action-btn table-action-btn-label">
+                                                                    <i class="fas fa-shopping-basket"></i> To Pickup
+                                                                </button>
+                                                            <?php endif; ?>
                                                         <?php endif; ?>
                                                         <?php if ($is_delivered && !$is_completed): ?>
                                                             <a href="sales.php?delivery_order_id=<?php echo $order['Order_ID']; ?>" title="Record Sale (Payment Received)" class="table-action-btn table-action-btn-label table-action-btn-sale">
@@ -1079,11 +1126,27 @@ if (!$orders_result) {
                                 <div id="credit_warning" class="co-credit-warning" style="display: none;">
                                     <i class="fas fa-exclamation-triangle"></i> <span id="credit_warning_msg"></span>
                                 </div>
+                                <div class="cart-field" style="margin-top: 8px;">
+                                    <label>Fulfillment Type</label>
+                                    <div style="display:flex;gap:8px;">
+                                        <button type="button" id="ftypeDeliveryBtn" class="co-fulfillment-option active" onclick="setFulfillmentType('delivery')">
+                                            <i class="fas fa-truck"></i> Delivery
+                                        </button>
+                                        <button type="button" id="ftypePickupBtn" class="co-fulfillment-option" onclick="setFulfillmentType('pickup')">
+                                            <i class="fas fa-shopping-basket"></i> Pickup
+                                        </button>
+                                    </div>
+                                    <input type="hidden" id="order_type" name="order_type" value="delivery">
+                                    <div style="font-size: 0.75rem; color: #64748b; margin-top: 4px;">
+                                        Pickup orders are settled at the counter; no rider needed.
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <div class="cart-step-group">
                             <h3 class="cart-step-title"><span class="step-num">2</span> Schedule &amp; Rider</h3>
+                            <div id="deliveryFulfillmentFields">
                             <div class="cart-field-grid">
                                 <div class="cart-field">
                                     <label for="order_date">Order Date</label>
@@ -1102,6 +1165,7 @@ if (!$orders_result) {
                                     <option value="<?php echo (int)$r['User_ID']; ?>"><?php echo htmlspecialchars($r['name'] ?? 'User #' . $r['User_ID']); ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                            </div>
                             </div>
                             <div class="cart-field" style="margin-top: 4px;">
                                 <label style="display: flex; align-items: center; gap: 8px; padding: 10px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer;">

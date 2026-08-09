@@ -5,6 +5,10 @@ require_once __DIR__ . '/../../includes/db.php';
 require_once __DIR__ . '/../../includes/module_access.php';
 require_once __DIR__ . '/../../includes/csrf.php';
 require_once __DIR__ . '/../../includes/roles_helper.php';
+require_once __DIR__ . '/../../includes/rider_availability_helper.php';
+
+// Repair deliveries stuck in Remitted after cashier already recorded the sale.
+syncDeliveriesWithRecordedSales($conn);
 
 // Accessible to Cashier, Owner, Manager
 $cashier_ids = getCashierRoleIds($conn);
@@ -15,7 +19,6 @@ $user_id = $_SESSION['user_id'] ?? 0;
 $can_cashier_delivery_orders = isModuleAllowedForUser($conn, (int)$user_id, 'cashier_delivery_orders_sales', true);
 
 // Fetch riders for dropdown
-require_once __DIR__ . '/../../includes/roles_helper.php';
 $rider_role_ids = getRiderRoleIds($conn);
 $riders_res = [];
 if (!empty($rider_role_ids)) {

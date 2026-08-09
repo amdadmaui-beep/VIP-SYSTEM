@@ -12,6 +12,11 @@
                     <button class="btn-mgmt" onclick="window.location.href='delivery_remittance.php'" title="Delivery Remittance">
                         <i class="fas fa-truck-loading"></i> Remittance
                     </button>
+                    <?php if ($can_cashier_delivery_orders): ?>
+                    <button class="btn-mgmt" onclick="window.location.href='pickup_orders.php'" title="Pickup Orders">
+                        <i class="fas fa-shopping-basket"></i> Pickup
+                    </button>
+                    <?php endif; ?>
                     <?php if ($can_cashier_ar_sales): ?>
                     <button class="btn-mgmt" onclick="window.location.href='ar_remittance.php'" title="AR Payments">
                         <i class="fas fa-file-invoice-dollar"></i> AR Payments

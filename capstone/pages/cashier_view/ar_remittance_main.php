@@ -1017,10 +1017,7 @@
                     let appsHtml = '';
                     if (result.applications && result.applications.length > 0) {
                         result.applications.forEach(app => {
-                            const dueNote = app.due_date_extended && app.new_due_date
-                                ? `, New Due: <strong>${app.new_due_date}</strong>`
-                                : '';
-                            appsHtml += `<li>AR ID #${app.ar_id}: Applied <strong>₱${app.applied.toFixed(2)}</strong> (New Bal: ₱${app.new_balance.toFixed(2)}${dueNote})</li>`;
+                            appsHtml += `<li>AR ID #${app.ar_id}: Applied <strong>₱${app.applied.toFixed(2)}</strong> (New Bal: ₱${app.new_balance.toFixed(2)})</li>`;
                         });
                     }
 

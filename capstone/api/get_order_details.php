@@ -68,12 +68,14 @@ try {
     $disc = !empty($orders_col['discount_amount']) ? 'o.discount_amount' : '0 AS discount_amount';
     $del_col_sel = !empty($orders_col['delivery_address']) ? 'o.delivery_address' : "'' AS delivery_address";
     $delivery_date_sel = !empty($orders_col['delivery_date']) ? 'o.delivery_date' : "NULL AS delivery_date";
+    $order_type_sel = !empty($orders_col['order_type']) ? 'o.order_type' : "'delivery' AS order_type";
     $cancel_reason_sel = !empty($orders_col['cancellation_reason']) ? 'o.cancellation_reason' : "NULL AS cancellation_reason";
     $cancel_remarks_sel = !empty($orders_col['cancellation_remarks']) ? 'o.cancellation_remarks' : "NULL AS cancellation_remarks";
 
     $order_query = "SELECT o.Order_ID, o.Customer_ID, o.order_date, {$delivery_date_sel}, o.{$order_status_col} AS order_status, o.total_amount,
                 {$del_col_sel},
                 {$disc},
+                {$order_type_sel},
                 {$cancel_reason_sel},
                 {$cancel_remarks_sel},
                 c.customer_name, c.phone_number, c.address AS customer_address
@@ -215,6 +217,7 @@ try {
         'customer_id' => (int)($order['Customer_ID'] ?? 0),
         'order_date' => (string)($order['order_date'] ?? ''),
         'delivery_date' => (string)($order['delivery_date'] ?? ''),
+        'order_type' => (string)($order['order_type'] ?? 'delivery'),
         'order_status' => $order['order_status'],
         'cancellation_reason' => (string)($order['cancellation_reason'] ?? ''),
         'cancellation_remarks' => (string)($order['cancellation_remarks'] ?? ''),

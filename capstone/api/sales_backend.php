@@ -86,7 +86,7 @@ function sendResponse($conn, $success, $message, $redirectUrl = '../pages/cashie
 // Handle different sales operations
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // CSRF Protection: Validate token for state-changing POST actions - Security Fix
-    $state_changing_actions = ['create_sale_from_delivery', 'create_sale_from_order', 'create_walkin_sale', 'void_sale', 'update_sale_customer'];
+    $state_changing_actions = ['create_sale_from_delivery', 'create_sale_from_order', 'create_pickup_sale', 'create_walkin_sale', 'void_sale', 'update_sale_customer'];
     $action = $_POST['action'] ?? '';
     if (in_array($action, $state_changing_actions)) {
         if (!validateCsrfToken(false)) {
@@ -112,11 +112,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'create_sale_from_delivery' && !isModuleAllowedForUser($conn, $uid, 'cashier_delivery_orders_sales', true)) {
         sendResponse($conn, false, "Delivery-order sales access is currently restricted for your account.");
     }
-    if (in_array($action, ['create_sale_from_delivery', 'create_walkin_sale'], true)) {
+    if (in_array($action, ['create_sale_from_delivery', 'create_walkin_sale', 'create_pickup_sale'], true)) {
         $postToAr = isset($_POST['post_to_ar']) && ($_POST['post_to_ar'] === 'on' || $_POST['post_to_ar'] === '1' || $_POST['post_to_ar'] === true);
         if ($postToAr && !isModuleAllowedForUser($conn, $uid, 'cashier_ar_sales', true)) {
             sendResponse($conn, false, "AR posting in sales is currently restricted for your account.");
         }
+    }
+    if ($action === 'create_pickup_sale' && !isModuleAllowedForUser($conn, $uid, 'cashier_delivery_orders_sales', true)) {
+        sendResponse($conn, false, "Pickup-order sales access is currently restricted for your account.");
     }
 
     switch ($action) {
@@ -124,11 +127,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         case 'create_sale_from_order':
             handleCreateSaleFromDelivery($conn, $user_id);
             break;
+        case 'create_pickup_sale':
+            handleCreatePickupSale($conn, $user_id);
+            break;
         case 'create_walkin_sale':
             handleCreateWalkinSale($conn, $user_id);
-            break;
-        case 'void_sale':
-            handleVoidSale($conn, $user_id);
             break;
         case 'update_sale_customer':
             handleUpdateSaleCustomer($conn, $user_id);
@@ -777,6 +780,430 @@ function handleCreateSaleFromDelivery($conn, $user_id) {
             'sale_id' => $sale_id
         ]);
         
+    } catch (Exception $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        sendResponse($conn, false, $e->getMessage());
+    }
+}
+
+/**
+ * Create sale from a pickup order
+ * Full ordered quantity only; unit price is the editable wholesale price (cashier may adjust).
+ */
+function handleCreatePickupSale($conn, $user_id) {
+    $order_id = intval($_POST['order_id'] ?? 0);
+    $remarks = trim($_POST['remarks'] ?? '');
+    $cash_received = max(0, floatval($_POST['cash_received'] ?? $_POST['amount_paid'] ?? 0));
+    $posted_sale_total = max(0, floatval($_POST['sale_total'] ?? 0));
+    $discount_amount = max(0, floatval($_POST['discount_amount'] ?? 0));
+
+    $pickup_items = [];
+    if (isset($_POST['product_id']) && is_array($_POST['product_id'])) {
+        foreach ($_POST['product_id'] as $index => $pid) {
+            $pickup_items[] = [
+                'product_id' => intval($pid),
+                'order_detail_id' => intval($_POST['order_detail_id'][$index] ?? 0),
+                'quantity' => floatval($_POST['quantity'][$index] ?? 0),
+                'unit_price' => floatval($_POST['unit_price'][$index] ?? 0)
+            ];
+        }
+    }
+
+    // Comprehensive validation
+    $errors = [];
+
+    if (empty($order_id) || $order_id <= 0) {
+        $errors[] = "Order ID is required.";
+    } else {
+        $order_check = $conn->prepare("SELECT o.Order_ID, o.Customer_ID, o.order_status, o.order_type FROM orders o WHERE o.Order_ID = ?");
+        $order_check->execute([$order_id]);
+        $order_row = $order_check->fetch(PDO::FETCH_ASSOC);
+        if (!$order_row) {
+            $errors[] = "Order does not exist.";
+        } elseif (strtolower((string)($order_row['order_type'] ?? 'delivery')) !== 'pickup') {
+            $errors[] = "This order is not a pickup order.";
+        } else {
+            $cur_status = strtolower((string)($order_row['order_status'] ?? ''));
+            if (in_array($cur_status, ['completed', 'cancelled'], true)) {
+                $errors[] = "This order is already " . (string)($order_row['order_status'] ?? 'completed') . " and cannot be settled.";
+            }
+        }
+    }
+
+    if (empty($pickup_items) || !is_array($pickup_items) || count($pickup_items) === 0) {
+        $errors[] = "At least one item is required for this pickup sale.";
+    } else {
+        $full_qty_only = true;
+        foreach ($pickup_items as $index => $item) {
+            $item_num = $index + 1;
+            $product_id = intval($item['product_id'] ?? 0);
+            if ($product_id <= 0) {
+                $errors[] = "Item #{$item_num}: Product ID is required.";
+                continue;
+            }
+
+            $product_check = $conn->prepare("SELECT Product_ID, product_name, is_discontinued, wholesale_price FROM products WHERE Product_ID = ?");
+            $product_check->execute([$product_id]);
+            $product_data = $product_check->fetch(PDO::FETCH_ASSOC);
+            if (!$product_data) {
+                $errors[] = "Item #{$item_num}: Product does not exist.";
+                continue;
+            }
+            if ((int)$product_data['is_discontinued'] === 1) {
+                $errors[] = "Item #{$item_num}: Cannot sell discontinued products.";
+            }
+
+            $order_detail_id = intval($item['order_detail_id'] ?? 0);
+            $ordered_qty = 0;
+            if ($order_detail_id > 0) {
+                $od_check = $conn->prepare("SELECT ordered_qty, unit_price FROM order_details WHERE Order_detail_ID = ?");
+                $od_check->execute([$order_detail_id]);
+                $od_row = $od_check->fetch(PDO::FETCH_ASSOC);
+                if (!$od_row) {
+                    $errors[] = "Item #{$item_num}: Order detail does not exist.";
+                } else {
+                    $ordered_qty = floatval($od_row['ordered_qty'] ?? 0);
+                }
+            } else {
+                $errors[] = "Item #{$item_num}: Order detail reference is missing.";
+            }
+
+            $quantity = floatval($item['quantity'] ?? 0);
+            if ($quantity <= 0) {
+                $errors[] = "Item #{$item_num}: Quantity must be greater than zero.";
+            } elseif ($full_qty_only && $ordered_qty > 0 && abs($quantity - $ordered_qty) > 0.00001) {
+                $errors[] = "Item #{$item_num}: Pickup settlement requires the full ordered quantity (" . rtrim(rtrim(number_format($ordered_qty, 2, '.', ''), '0'), '.') . " ordered, " . rtrim(rtrim(number_format($quantity, 2, '.', ''), '0'), '.') . " entered).";
+            }
+
+            $unit_price = floatval($item['unit_price'] ?? 0);
+            if ($unit_price <= 0) {
+                $unit_price = floatval($product_data['wholesale_price'] ?? 0);
+                if ($unit_price <= 0 && $ordered_qty > 0) {
+                    $unit_price = floatval($od_row['unit_price'] ?? 0);
+                }
+            }
+            if ($unit_price <= 0) {
+                $errors[] = "Item #{$item_num}: Unit price could not be determined. Set a wholesale price for this product.";
+            }
+            $pickup_items[$index]['unit_price'] = $unit_price;
+        }
+    }
+
+    if (!empty($remarks) && strlen($remarks) > 500) {
+        $errors[] = "Remarks must not exceed 500 characters.";
+    }
+
+    if (empty($user_id) || $user_id <= 0) {
+        $errors[] = "Invalid user session. Please log in again.";
+    }
+
+    if (!empty($errors)) {
+        sendResponse($conn, false, implode(' | ', $errors));
+    }
+
+    $openShift = getOpenCashShiftForUser($conn, (int) $user_id);
+    if (!$openShift) {
+        sendResponse($conn, false, 'Open a cashier shift before recording pickup sales.');
+    }
+
+    $customer_id = intval($order_row['Customer_ID'] ?? 0);
+    $customer_info = $conn->prepare("SELECT c.customer_name, c.email FROM customers c WHERE c.Customer_ID = ?");
+    $customer_info->execute([$customer_id]);
+    $customer_row = $customer_info->fetch(PDO::FETCH_ASSOC);
+    $customer_name = $customer_row['customer_name'] ?? '';
+    $customer_email = $customer_row['email'] ?? '';
+
+    $conn->beginTransaction();
+    try {
+        $columns_result = $conn->query("SHOW COLUMNS FROM sales");
+        $existing_columns = [];
+        while ($row = $columns_result->fetch()) {
+            $existing_columns[] = $row['Field'];
+        }
+
+        $has_status = in_array('status', $existing_columns);
+        $has_remarks = in_array('remarks', $existing_columns);
+        $has_created_by = in_array('created_by', $existing_columns);
+        $has_customer_id = in_array('Customer_ID', $existing_columns) || in_array('customer_id', $existing_columns);
+
+        $insert_fields = [];
+        $values_placeholders = [];
+        $params = [];
+
+        if (in_array('User_ID', $existing_columns)) {
+            $insert_fields[] = 'User_ID';
+            $values_placeholders[] = '?';
+            $params[] = intval($user_id);
+        } elseif (in_array('user_id', $existing_columns)) {
+            $insert_fields[] = 'user_id';
+            $values_placeholders[] = '?';
+            $params[] = intval($user_id);
+        }
+
+        if ($has_created_by) {
+            $insert_fields[] = 'created_by';
+            $values_placeholders[] = '?';
+            $params[] = intval($user_id);
+        }
+
+        if ($has_customer_id) {
+            $cid = $customer_id;
+            if ($cid <= 0) $cid = getOrCreateWalkinCustomerId($conn);
+            if (in_array('Customer_ID', $existing_columns)) {
+                $insert_fields[] = 'Customer_ID';
+                $values_placeholders[] = '?';
+                $params[] = $cid;
+            } elseif (in_array('customer_id', $existing_columns)) {
+                $insert_fields[] = 'customer_id';
+                $values_placeholders[] = '?';
+                $params[] = $cid;
+            }
+        }
+
+        if ($has_status) {
+            $insert_fields[] = 'status';
+            $values_placeholders[] = "'Completed'";
+        }
+
+        if ($has_remarks) {
+            $insert_fields[] = 'remarks';
+            $values_placeholders[] = '?';
+            $params[] = $remarks;
+        }
+
+        if (in_array('created_at', $existing_columns)) {
+            $insert_fields[] = 'created_at';
+            $values_placeholders[] = 'NOW()';
+        }
+
+        $sql = empty($insert_fields) ? "INSERT INTO sales () VALUES ()" : "INSERT INTO sales (" . implode(', ', $insert_fields) . ") VALUES (" . implode(', ', $values_placeholders) . ")";
+        $sale_stmt = $conn->prepare($sql);
+        $sale_stmt->execute($params);
+        $sale_id = $conn->lastInsertId();
+
+        foreach ($pickup_items as $item) {
+            $product_id = intval($item['product_id'] ?? 0);
+            $quantity = floatval($item['quantity'] ?? 0);
+            $unit_price = floatval($item['unit_price'] ?? 0);
+            if ($quantity <= 0 || $unit_price <= 0) continue;
+
+            $subtotal = $quantity * $unit_price;
+            $sale_detail_stmt = $conn->prepare("INSERT INTO sale_details (Sale_ID, Product_ID, quantity, unit_price, subtotal) VALUES (?, ?, ?, ?, ?)");
+            $sale_detail_stmt->execute([$sale_id, $product_id, $quantity, $unit_price, $subtotal]);
+            deductInventory($conn, $product_id, $quantity);
+        }
+
+        $total_sale_query = $conn->prepare("SELECT COALESCE(SUM(subtotal), 0) as total FROM sale_details WHERE Sale_ID = ?");
+        $total_sale_query->execute([$sale_id]);
+        $gross_sale_total = floatval($total_sale_query->fetchColumn() ?? 0);
+        $effective_sale_total = $posted_sale_total > 0 ? $posted_sale_total : max(0, $gross_sale_total - $discount_amount);
+
+        updateOrderAfterSale($conn, $order_id, intval($sale_id));
+
+        // Post to AR
+        $post_to_ar = isset($_POST['post_to_ar']) && ($_POST['post_to_ar'] === 'on' || $_POST['post_to_ar'] === '1' || $_POST['post_to_ar'] === true);
+        $created_ar_context = null;
+        if ($post_to_ar) {
+            $dup_check = $conn->prepare("SELECT AR_ID FROM account_receivable WHERE Sale_ID = ? LIMIT 1");
+            $dup_check->execute([$sale_id]);
+            if ($dup_check->fetch()) {
+                throw new Exception("AR record already exists for this sale.");
+            }
+
+            $amount_paid = $cash_received;
+
+            $aging_days = 30;
+            if ($customer_id > 0) {
+                $customer_query = $conn->prepare("SELECT aging_days FROM customers WHERE Customer_ID = ?");
+                $customer_query->execute([$customer_id]);
+                $customer_data = $customer_query->fetch();
+                if ($customer_data) $aging_days = intval($customer_data['aging_days'] ?? 30);
+            }
+
+            $due_date = date('Y-m-d', strtotime("+{$aging_days} days"));
+
+            $invoice_amount = $effective_sale_total;
+            $amount_due = max(0, $invoice_amount - $amount_paid);
+
+            if ($amount_due > 0 && $customer_id > 0) {
+                $credit_check_stmt = $conn->prepare("SELECT credit_limit, customer_name FROM customers WHERE Customer_ID = ?");
+                $credit_check_stmt->execute([$customer_id]);
+                $credit_info = $credit_check_stmt->fetch();
+
+                $credit_limit = floatval($credit_info['credit_limit'] ?? 0);
+                $customer_name = $credit_info['customer_name'] ?? 'Unknown';
+
+                $outstanding_stmt = $conn->prepare("SELECT SUM(amount_due) as total FROM account_receivable WHERE Customer_ID = ? AND status NOT IN ('Paid', 'Closed')");
+                $outstanding_stmt->execute([$customer_id]);
+                $total_outstanding = floatval($outstanding_stmt->fetchColumn() ?? 0);
+
+                $total_after_ar = $total_outstanding + $amount_due;
+                if ($credit_limit > 0 && $total_after_ar > $credit_limit) {
+                    logActivity('SALE', "Credit cap blocked pickup AR for customer {$customer_name} (ID: {$customer_id}). " .
+                        "Outstanding: {$total_outstanding}, Limit: {$credit_limit}, Attempted AR: {$amount_due}", $customer_id);
+
+                    throw new Exception(
+                        "Adding this AR (\u{20B1}" . number_format($amount_due, 2) . ") would bring the total to \u{20B1}" . number_format($total_after_ar, 2) . ", exceeding the credit limit of \u{20B1}" . number_format($credit_limit, 2) . ".\n" .
+                        "Reduce the AR amount so that total outstanding (\u{20B1}" . number_format($total_outstanding, 2) . ") + new AR stays within the credit limit."
+                    );
+                }
+
+                $ar_stmt = $conn->prepare("INSERT INTO account_receivable 
+                    (Sale_ID, Customer_ID, invoice_date, invoice_amount, opening_balance, amount_due, due_date, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                $ar_stmt->execute([$sale_id, $customer_id, date('Y-m-d'), $invoice_amount, $amount_due, $amount_due, $due_date, 'Open']);
+                $ar_id = (int)$conn->lastInsertId();
+
+                if ($amount_paid > 0) {
+                    $pay_stmt = $conn->prepare("INSERT INTO ar_payment (payment_date, amount_paid, remaining_balance, collected_by) VALUES (?, ?, ?, ?)");
+                    $pay_stmt->execute([date('Y-m-d'), $amount_paid, $amount_due, $user_id]);
+                    $payment_id = $conn->lastInsertId();
+
+                    $link_stmt = $conn->prepare("INSERT INTO singil (AR_ID, Payment_ID) VALUES (?, ?)");
+                    $link_stmt->execute([$ar_id, $payment_id]);
+                }
+
+                $created_ar_context = [
+                    'ar_id' => $ar_id,
+                    'invoice_amount' => $invoice_amount,
+                    'amount_due' => $amount_due,
+                    'due_date' => $due_date,
+                    'amount_paid' => $amount_paid,
+                    'customer_id' => $customer_id,
+                ];
+            }
+        }
+
+        // Blank/zero cash on a cash pickup = exact payment
+        if (!$post_to_ar && $cash_received <= 0) {
+            $cash_received = $effective_sale_total;
+        }
+
+        $change_given = max(0, $cash_received - $effective_sale_total);
+        $net_cash = max(0, $cash_received - $change_given);
+        if (!$post_to_ar && $net_cash + 0.00001 < $effective_sale_total) {
+            throw new Exception('Cash received is not enough to cover this pickup sale.');
+        }
+
+        recordCashSessionEntry($conn, [
+            'shift_id' => (int) $openShift['shift_id'],
+            'entry_type' => 'pickup_sale',
+            'source_label' => 'Pickup Sale',
+            'sale_id' => (int) $sale_id,
+            'order_id' => (int) $order_id,
+            'gross_amount' => $effective_sale_total,
+            'cash_received' => $cash_received,
+            'change_given' => $change_given,
+            'net_cash' => $net_cash,
+            'User_ID' => (int) $user_id,
+        ]);
+
+        $conn->commit();
+        cacheInvalidateTable('sales');
+        cacheInvalidateTable('sale_details');
+        cacheInvalidateTable('products');
+        cacheInvalidateTable('orders');
+        cacheInvalidateTable('account_receivable');
+        cacheInvalidateTable('ar_payment');
+        cacheInvalidateTable('cash_session_entries');
+
+        logActivity('SALE', "Recorded pickup sale from Order #{$order_id} (Sale #{$sale_id})", $sale_id);
+
+        // Email receipt
+        $to_email = trim((string)$customer_email);
+        $to_name = trim((string)$customer_name);
+        if (!empty($to_email) && filter_var($to_email, FILTER_VALIDATE_EMAIL)) {
+            try {
+                $items_stmt = $conn->prepare("SELECT sd.*, p.product_name, u.unit_name
+                                              FROM sale_details sd 
+                                              INNER JOIN products p ON sd.Product_ID = p.Product_ID 
+                                              LEFT JOIN units u ON p.unit_id = u.unit_id
+                                              WHERE sd.Sale_ID = ?
+                                              ORDER BY sd.Sale_detail_ID ASC");
+                $items_stmt->execute([$sale_id]);
+                $email_items = [];
+                while ($it = $items_stmt->fetch(PDO::FETCH_ASSOC)) {
+                    $pname = $it['product_name'];
+                    if (!empty($it['unit_name'])) $pname .= " {$it['unit_name']}";
+                    $email_items[] = [
+                        'product_name' => $pname,
+                        'quantity' => floatval($it['quantity']),
+                        'unit_price' => floatval($it['unit_price']),
+                        'subtotal' => floatval($it['subtotal'])
+                    ];
+                }
+
+                $ar_balance = 0;
+                if ($customer_id > 0) {
+                    $outstanding_stmt = $conn->prepare("SELECT COALESCE(SUM(amount_due), 0) FROM account_receivable WHERE Customer_ID = ? AND status NOT IN ('Paid', 'Closed')");
+                    $outstanding_stmt->execute([$customer_id]);
+                    $ar_balance = floatval($outstanding_stmt->fetchColumn() ?? 0);
+                }
+
+                $sale_details = [
+                    'sale_id' => $sale_id,
+                    'created_at' => date('Y-m-d H:i:s'),
+                    'payment_type' => $post_to_ar ? 'Accounts Receivable (Credit)' : 'Cash',
+                    'gross_total' => $gross_sale_total,
+                    'discount' => $discount_amount,
+                    'total_amount' => $effective_sale_total,
+                    'cash_received' => $cash_received,
+                    'change_given' => $change_given,
+                    'ar_balance' => $ar_balance
+                ];
+
+                sendDeliverySaleReceiptEmail($to_email, $to_name, $sale_details, $email_items);
+
+                if ($created_ar_context && ($created_ar_context['amount_due'] ?? 0) > 0) {
+                    sendARCreatedEmail(
+                        $to_email,
+                        $to_name,
+                        (int)$created_ar_context['ar_id'],
+                        (float)$created_ar_context['invoice_amount'],
+                        (float)$created_ar_context['amount_due'],
+                        (string)$created_ar_context['due_date'],
+                        (int)$sale_id
+                    );
+                }
+
+                if ($created_ar_context && ($created_ar_context['amount_paid'] ?? 0) > 0) {
+                    $ctx = $created_ar_context;
+                    $remaining = (float)$ctx['amount_due'];
+                    $paid = (float)$ctx['amount_paid'];
+                    sendARPaymentEmail(
+                        $to_email,
+                        $to_name,
+                        (int)$ctx['ar_id'],
+                        $paid,
+                        $remaining,
+                        $remaining <= 0,
+                        (float)$ctx['invoice_amount']
+                    );
+                }
+            } catch (Throwable $e) {
+                logActivity('SYSTEM_ERROR', "Failed to send receipt email for pickup Sale #$sale_id: " . $e->getMessage(), $sale_id);
+            }
+        }
+
+        try {
+            publishRealtimeEvent([
+                'event' => 'sale.pickup_recorded',
+                'data' => [
+                    'order_id' => (int)$order_id,
+                    'sale_id' => (int)$sale_id,
+                    'status' => 'Completed'
+                ]
+            ]);
+        } catch (Throwable $e) {
+            // Non-critical
+        }
+
+        sendResponse($conn, true, [
+            'message' => "Pickup sale recorded successfully (Order #{$order_id}).",
+            'sale_id' => $sale_id,
+            'order_id' => $order_id
+        ]);
+
     } catch (Exception $e) {
         if ($conn->inTransaction()) $conn->rollBack();
         sendResponse($conn, false, $e->getMessage());

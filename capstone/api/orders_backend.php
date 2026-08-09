@@ -30,7 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     return;
 }
 
-$state_changing_actions = ['create_order', 'update_order', 'reorder_order', 'update_status', 'assign_delivery', 'cancel_order'];
+$state_changing_actions = ['create_order', 'update_order', 'reorder_order', 'update_status', 'assign_delivery', 'cancel_order', 'switch_fulfillment'];
 $action = (string)($_POST['action'] ?? '');
 if (in_array($action, $state_changing_actions, true) && !validateCsrfToken(false)) {
     $error_msg = 'Invalid or expired security token. Please refresh the page and try again.';
@@ -76,6 +76,9 @@ switch ($action) {
         break;
     case 'cancel_order':
         ordersHandleCancelOrder($conn, $user_id);
+        break;
+    case 'switch_fulfillment':
+        ordersHandleSwitchFulfillment($conn, $user_id);
         break;
     default:
         header("Location: ../pages/orders.php?error=Invalid action");

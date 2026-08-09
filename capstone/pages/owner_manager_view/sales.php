@@ -832,6 +832,10 @@ $customers_result = $conn->query($customers_query);
                     <i class="fas fa-truck"></i>
                     <span>Delivery</span>
                 </a>
+                <a href="../pickup_orders.php" class="menu-item">
+                    <i class="fas fa-shopping-basket"></i>
+                    <span>Pickup Orders</span>
+                </a>
             </div>
 
             <div class="menu-section">

@@ -723,7 +723,7 @@ function doXRead(managerPin) {
                         <div style="background: #f8fafc; border: 1px solid var(--pos-border); border-radius: 12px; padding: 1rem; text-align: center;">
                             <div style="font-size: 0.65rem; color: var(--pos-text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; margin-bottom: 0.4rem;">Credit / AR</div>
                             <div style="font-size: 1.2rem; font-weight: 800; color: #6366f1;">${formatCurrency(totals.credit_sales)}</div>
-                            <div style="font-size: 0.65rem; color: var(--pos-text-muted); margin-top: 0.2rem;">Credit terms extended</div>
+                            <div style="font-size: 0.65rem; color: var(--pos-text-muted); margin-top: 0.2rem;">Partial-payment balance (AR)</div>
                         </div>
                     </div>
 

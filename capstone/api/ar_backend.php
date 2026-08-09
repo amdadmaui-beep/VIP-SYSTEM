@@ -515,33 +515,18 @@ function recordPayment($conn, $user_id) {
             $link_stmt->execute([$current_ar_id, $payment_id]);
             
             $new_status = $new_balance <= 0 ? 'Paid' : 'Partial';
-            $extended_due_date = null;
-            if ($new_balance > 0) {
-                $payment_ts = strtotime($payment_date) ?: time();
-                $current_due_ts = strtotime((string)($ar['due_date'] ?? '')) ?: $payment_ts;
-                $base_due_ts = max($payment_ts, $current_due_ts);
-                $extended_due_date = date('Y-m-d', strtotime('+7 days', $base_due_ts));
-            }
-
-            if ($extended_due_date !== null) {
-                $update_stmt = $conn->prepare("UPDATE account_receivable
-                    SET amount_due = ?, status = ?, due_date = ?, updated_at = NOW()
-                    WHERE AR_ID = ?");
-                $update_stmt->execute([$new_balance, $new_status, $extended_due_date, $current_ar_id]);
-            } else {
-                $update_stmt = $conn->prepare("UPDATE account_receivable
-                    SET amount_due = ?, status = ?, updated_at = NOW()
-                    WHERE AR_ID = ?");
-                $update_stmt->execute([$new_balance, $new_status, $current_ar_id]);
-            }
+            $update_stmt = $conn->prepare("UPDATE account_receivable
+                SET amount_due = ?, status = ?, updated_at = NOW()
+                WHERE AR_ID = ?");
+            $update_stmt->execute([$new_balance, $new_status, $current_ar_id]);
             
             $applications[] = [
                 'ar_id' => $current_ar_id,
                 'applied' => $apply_amount,
                 'new_balance' => $new_balance,
                 'status' => $new_status,
-                'new_due_date' => $extended_due_date,
-                'due_date_extended' => $extended_due_date !== null
+                'new_due_date' => null,
+                'due_date_extended' => false
             ];
         }
         

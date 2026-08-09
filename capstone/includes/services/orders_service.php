@@ -265,6 +265,11 @@ function ordersHandleCreateOrder(PDO $conn, int $userId): void
             $insert_values[] = '?';
             $bind_params[] = (int)($_POST['is_ar'] ?? 0);
         }
+        if (in_array('order_type', $existing_columns, true)) {
+            $insert_fields[] = 'order_type';
+            $insert_values[] = '?';
+            $bind_params[] = (($_POST['order_type'] ?? '') === 'pickup') ? 'pickup' : 'delivery';
+        }
         if (in_array('created_at', $existing_columns, true)) {
             $insert_fields[] = 'created_at';
             $insert_values[] = 'NOW()';
@@ -604,6 +609,11 @@ function ordersHandleReorderOrder(PDO $conn, int $userId): void
     } else {
         $source_select[] = "'' AS delivery_address";
     }
+    if (in_array('order_type', $source_columns, true)) {
+        $source_select[] = 'order_type';
+    } else {
+        $source_select[] = "'delivery' AS order_type";
+    }
     $source_stmt = $conn->prepare("SELECT " . implode(', ', $source_select) . " FROM orders WHERE Order_ID = ?");
     $source_stmt->execute([$source_order_id]);
     $source = $source_stmt->fetch(PDO::FETCH_ASSOC);
@@ -627,6 +637,28 @@ function ordersHandleReorderOrder(PDO $conn, int $userId): void
     $discount = 0.0;
     $total_amount = max(0, $subtotal - $discount);
 
+    // Server-side Credit & Balance Check (same rule as order creation)
+    try {
+        $credit_stmt = $conn->prepare("SELECT credit_limit FROM customers WHERE Customer_ID = ?");
+        $credit_stmt->execute([(int)$source['Customer_ID']]);
+        $customer_credit_limit = (float)($credit_stmt->fetchColumn() ?: 0);
+
+        $unpaid_stmt = $conn->prepare("SELECT SUM(amount_due) FROM account_receivable WHERE Customer_ID = ? AND status NOT IN ('Paid', 'Closed')");
+        $unpaid_stmt->execute([(int)$source['Customer_ID']]);
+        $total_unpaid = (float)($unpaid_stmt->fetchColumn() ?: 0);
+
+        $total_after_order = $total_unpaid + $total_amount;
+        if ($customer_credit_limit > 0 && $total_after_order > $customer_credit_limit) {
+            $errors[] = "Order blocked: This order would bring the customer's total balance to \u{20B1}" . number_format($total_after_order, 2) . ", exceeding their credit limit of \u{20B1}" . number_format($customer_credit_limit, 2) . ".";
+            $_SESSION['order_errors'] = $errors;
+            header("Location: ../pages/orders.php?error=" . urlencode(implode(' | ', $errors)));
+            exit();
+        }
+    } catch (Exception $e) {
+        // Log error but don't block reorder if credit check fails (fallback)
+        error_log("Credit check failed on reorder: " . $e->getMessage());
+    }
+
     $conn->beginTransaction();
     try {
         $columns = ordersRepoGetColumns($conn, 'orders');
@@ -637,6 +669,7 @@ function ordersHandleReorderOrder(PDO $conn, int $userId): void
         if (in_array('delivery_address', $columns, true)) { $insert_fields[] = 'delivery_address'; $insert_values[] = '?'; $params[] = (string)($source['delivery_address'] ?? ''); }
         if (in_array('created_by', $columns, true)) { $insert_fields[] = 'created_by'; $insert_values[] = '?'; $params[] = $userId; }
         if (in_array('created_at', $columns, true)) { $insert_fields[] = 'created_at'; $insert_values[] = 'NOW()'; }
+        if (in_array('order_type', $columns, true)) { $insert_fields[] = 'order_type'; $insert_values[] = '?'; $params[] = (string)($source['order_type'] ?? 'delivery'); }
 
         $stmt = $conn->prepare("INSERT INTO orders (" . implode(', ', $insert_fields) . ") VALUES (" . implode(', ', $insert_values) . ")");
         $stmt->execute($params);
@@ -706,6 +739,50 @@ function ordersHandleReorderOrder(PDO $conn, int $userId): void
         header("Location: ../pages/orders.php?error=" . urlencode($e->getMessage()));
         exit();
     }
+}
+
+function ordersHandleSwitchFulfillment(PDO $conn, int $userId): void
+{
+    $order_id = (int)($_POST['order_id'] ?? 0);
+    $target = (($_POST['order_type'] ?? '') === 'pickup') ? 'pickup' : 'delivery';
+
+    if ($order_id <= 0) {
+        header("Location: ../pages/orders.php?error=Invalid order ID");
+        exit();
+    }
+
+    $stmt = $conn->prepare("SELECT order_status FROM orders WHERE Order_ID = ?");
+    $stmt->execute([$order_id]);
+    $current = (string)($stmt->fetchColumn() ?: '');
+    if ($current === '') {
+        header("Location: ../pages/orders.php?error=Order not found");
+        exit();
+    }
+    $current_lower = strtolower($current);
+    if (in_array($current_lower, ['completed', 'cancelled'], true)) {
+        header("Location: ../pages/orders.php?error=" . urlencode("Cannot change fulfillment on a {$current} order."));
+        exit();
+    }
+
+    if ($target === 'pickup') {
+        $d = $conn->prepare("SELECT COUNT(*) FROM delivery WHERE Order_ID = ?");
+        $d->execute([$order_id]);
+        if ((int)$d->fetchColumn() > 0) {
+            header("Location: ../pages/orders.php?error=" . urlencode('This order is already in the delivery flow and cannot be changed to pickup.'));
+            exit();
+        }
+    }
+
+    $upd = $conn->prepare("UPDATE orders SET order_type = ?, updated_at = NOW() WHERE Order_ID = ?");
+    $upd->execute([$target, $order_id]);
+    cacheInvalidateTable('orders');
+
+    if (function_exists('logActivity')) {
+        logActivity('ORDER', "Order #{$order_id} fulfillment changed to " . ($target === 'pickup' ? 'pickup' : 'delivery'), (int)$order_id);
+    }
+
+    header("Location: ../pages/orders.php?type=" . $target . "&success=" . urlencode("Order #{$order_id} changed to " . ($target === 'pickup' ? 'Pickup' : 'Delivery') . "."));
+    exit();
 }
 
 function ordersHandleUpdateStatus(PDO $conn, int $userId): void

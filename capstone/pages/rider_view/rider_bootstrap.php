@@ -219,6 +219,9 @@ function geocodeDestinationServer($address) {
     return null;
 }
 
+// Keep rider queue in sync when cashier already recorded remittance but status stayed Remitted.
+syncDeliveriesWithRecordedSales($conn, $user_id);
+
 // Fetch active deliveries for this rider — assigned by ID or by name (fallback for legacy/name-only assignment)
 $deliveries = [];
 $has_prep_tasks = false;
@@ -264,6 +267,7 @@ if ($has_assigned) {
                          ) oq ON oq.Order_ID = o.Order_ID
                          WHERE {$where_assign}
                            AND d.delivery_status IN ('Scheduled', 'In Transit', 'Delivered', 'Remitted', 'Returning')
+                           AND " . deliveryPendingCashierRemittanceSql('d') . "
                          ORDER BY CASE d.delivery_status WHEN 'Scheduled' THEN 1 WHEN 'In Transit' THEN 2 END, d.schedule_date ASC
                          LIMIT 100";
     $stmt = $conn->prepare($deliveries_query);

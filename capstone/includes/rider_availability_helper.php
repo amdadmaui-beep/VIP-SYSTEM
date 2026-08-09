@@ -83,6 +83,54 @@ function riderWorkflowActiveDeliveryCondition(string $deliveryAlias = 'd'): stri
     return "(" . $alias . ".delivery_status IN ('Scheduled', 'In Transit', 'Delivered', 'Remitted', 'Returning'))";
 }
 
+/**
+ * SQL fragment: delivery has not yet been recorded as a sale by the cashier.
+ */
+function deliveryPendingCashierRemittanceSql(string $deliveryAlias = 'd'): string
+{
+    $alias = trim($deliveryAlias) !== '' ? trim($deliveryAlias) : 'd';
+
+    return "NOT EXISTS (
+        SELECT 1 FROM sale_source ss
+        WHERE ss.Delivery_ID = {$alias}.Delivery_ID
+          AND ss.Sale_ID IS NOT NULL
+    )";
+}
+
+/**
+ * Repair deliveries stuck in Remitted/Delivered after cashier already recorded the sale.
+ */
+function syncDeliveriesWithRecordedSales(PDO $conn, ?int $riderUserId = null): int
+{
+    try {
+        $tableCheck = $conn->query("SHOW TABLES LIKE 'sale_source'");
+        if (!$tableCheck || $tableCheck->rowCount() === 0) {
+            return 0;
+        }
+    } catch (Throwable $e) {
+        return 0;
+    }
+
+    $sql = "UPDATE delivery d
+            INNER JOIN sale_source ss ON ss.Delivery_ID = d.Delivery_ID AND ss.Sale_ID IS NOT NULL
+            SET d.delivery_status = 'Completed', d.updated_at = NOW()
+            WHERE d.delivery_status IN ('Remitted', 'Delivered', 'Delivered (Pending Cash Turnover)')";
+    $params = [];
+    if ($riderUserId !== null && $riderUserId > 0) {
+        $ownership = riderBuildOwnershipCondition($conn, 'd', $riderUserId, $params);
+        $sql .= " AND {$ownership}";
+    }
+
+    try {
+        $stmt = $conn->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->rowCount();
+    } catch (Throwable $e) {
+        error_log('syncDeliveriesWithRecordedSales failed: ' . $e->getMessage());
+        return 0;
+    }
+}
+
 function riderGetIdentity(PDO $conn, int $userId): array
 {
     if ($userId <= 0) {

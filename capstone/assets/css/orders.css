@@ -1973,3 +1973,29 @@
         width: 100%;
     }
 }
+
+.co-fulfillment-option {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+.co-fulfillment-option:hover {
+    border-color: #c4b5fd;
+    background: #f5f3ff;
+}
+.co-fulfillment-option.active {
+    background: #7350F5;
+    border-color: #7350F5;
+    color: #ffffff;
+}

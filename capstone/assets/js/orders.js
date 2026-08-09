@@ -233,8 +233,47 @@ function submitOrderStatusUpdate(orderId, newStatus, extraFields = {}) {
         form.appendChild(input);
     });
 
-    document.body.appendChild(form);
+document.body.appendChild(form);
     form.submit();
+}
+
+// Switch fulfillment type (pickup <-> delivery)
+function switchFulfillment(orderId, target) {
+    const fromLabel = target === 'pickup' ? 'Delivery' : 'Pickup';
+    const toLabel = target === 'pickup' ? 'Pickup' : 'Delivery';
+    Swal.fire({
+        title: `Change to ${toLabel}?`,
+        html: `<p style="font-size:0.9rem;color:#475569;">Order #${orderId} is currently <strong>${fromLabel}</strong>. It will become a <strong>${toLabel}</strong> order.</p>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: `Yes, change to ${toLabel}`,
+        confirmButtonColor: '#16a34a',
+        cancelButtonText: 'Keep as is'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = getOrdersFormAction();
+
+            const fields = {
+                action: 'switch_fulfillment',
+                order_id: String(orderId),
+                order_type: target
+            };
+
+            for (const [name, value] of Object.entries(fields)) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = value;
+                form.appendChild(input);
+            }
+
+            appendCsrfField(form);
+            document.body.appendChild(form);
+            form.submit();
+        }
+    });
 }
 
 // Show create order POS modal
@@ -262,6 +301,30 @@ function showCreateOrderModal() {
     renderProductCatalog();
     document.getElementById('catalogSearchInput').value = '';
     updateLastOrderButtonState();
+    setFulfillmentType('delivery');
+}
+
+// Set fulfillment type (delivery | pickup) for the create/edit order modal
+function setFulfillmentType(type) {
+    const isPickup = type === 'pickup';
+    const hidden = document.getElementById('order_type');
+    if (hidden) hidden.value = isPickup ? 'pickup' : 'delivery';
+
+    const btnD = document.getElementById('ftypeDeliveryBtn');
+    const btnP = document.getElementById('ftypePickupBtn');
+    if (btnD) btnD.classList.toggle('active', !isPickup);
+    if (btnP) btnP.classList.toggle('active', isPickup);
+
+    const deliveryFields = document.getElementById('deliveryFulfillmentFields');
+    if (deliveryFields) deliveryFields.style.display = isPickup ? 'none' : 'block';
+
+    const modalTitle = document.getElementById('createOrderTitle');
+    if (modalTitle && !editingOrderId) {
+        modalTitle.innerHTML = isPickup
+            ? '<i class="fas fa-file-invoice"></i> New pickup order'
+            : '<i class="fas fa-file-invoice"></i> New delivery order';
+        modalTitle.style.color = '#ffffff';
+    }
 }
 
 // Close create order POS modal
@@ -337,6 +400,7 @@ async function openEditOrder(orderId) {
         if (document.getElementById('discount_amount')) {
             document.getElementById('discount_amount').value = data.discount_amount || 0;
         }
+        setFulfillmentType(((data.order_type || 'delivery') === 'pickup') ? 'pickup' : 'delivery');
         const modalTitle = document.getElementById('createOrderTitle');
         if (modalTitle) {
             modalTitle.innerHTML = `<i class="fas fa-pen"></i> Edit order #${orderId}`;
@@ -1421,6 +1485,8 @@ window.onCustomerChange = onCustomerChange;
 window.loadLastOrderForSelectedCustomer = loadLastOrderForSelectedCustomer;
 window.viewOrderDetails = viewOrderDetails;
 window.cancelOrder = cancelOrder;
+window.switchFulfillment = switchFulfillment;
+window.setFulfillmentType = setFulfillmentType;
 window.updateCartItemQty = updateCartItemQty;
 window.removeFromCart = removeFromCart;
 window.setCartItemQty = setCartItemQty;

@@ -50,6 +50,8 @@ try {
         echo json_encode(['success' => false, 'message' => 'Selected user is not a rider']);
         exit();
     }
+
+    syncDeliveriesWithRecordedSales($conn, $rider_id);
     
     // Check products table schema for unit handling
     $p_cols = $conn->query("SHOW COLUMNS FROM products")->fetchAll(PDO::FETCH_COLUMN);
